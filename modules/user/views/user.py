@@ -14,8 +14,8 @@ from modules.article.serializers.article import ArticleSerializers
 from modules.authority.models import Role
 from modules.user.models import Users, UserProfile, UserAuthority, UserActivityLog
 from modules.user.serializers.user import UserSerializers
-from modules.user.service.user import validate_add_user_params, generate_token, add_user_activity
-from utils.auth import get_user_id
+from modules.user.service.user import validate_add_user_params, generate_token, generate_refresh_token, add_user_activity
+from utils.auth import get_user_id, validate_refresh_token
 from utils.response import res_handle, res_search, res_limit
 from utils.tools import post_handle, obj_has_attr, limit_queryset
 
@@ -104,9 +104,11 @@ def user_login_admin_system(request):
         'loginTime': user_profile.loginTime,
     }
     result = generate_token({'id': user.id})
+    refresh_token = generate_refresh_token({'id': user.id})
     user_data = {
         'userInfo': token_data,
         'token': result,
+        'refreshToken': refresh_token,
         'csrfToken': csrf_token,
     }
     add_user_activity(user.id, 'login', None, '登录', {})
@@ -153,6 +155,21 @@ def get_valid_code(request):
     valid_code = str(random.randint(100000, 999999))
     cache.set(key, valid_code, 120)
     return res_handle(0, '获取成功', valid_code)
+
+
+@csrf_exempt
+def user_refresh_token(request):
+    """用 refresh token 换取新的 access token"""
+    params = post_handle(request)
+    refresh_token = params.get('refreshToken', '')
+    if not refresh_token:
+        return res_handle(401, '刷新令牌不能为空')
+    v_result = validate_refresh_token(refresh_token)
+    if v_result.get('code') != 0:
+        return res_handle(v_result['code'], v_result['msg'])
+    user_id = v_result['data']['id']
+    new_access_token = generate_token({'id': user_id})
+    return res_handle(0, '刷新成功', {'token': new_access_token})
 
 
 def get_self_activity_log(request):

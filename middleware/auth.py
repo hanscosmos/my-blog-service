@@ -2,7 +2,6 @@ from django.http import JsonResponse
 from django.utils.deprecation import MiddlewareMixin
 
 from config.choices import WHITE_PATH_LIST
-from modules.authority.models import Api, ApiAuthority, Role
 from modules.user.models import Users
 from utils.auth import validate_token
 from utils.tools import json_handle

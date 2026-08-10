@@ -21,20 +21,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv(BASE_DIR / '.env')
 
-INIT_USER_PASSWORD=os.getenv('INIT_USER_PASSWORD','')
-TOKEN_WORK_TIME=os.getenv('TOKEN_WORK_TIME','')
-USER_REFRESH_TOKEN_TIME=os.getenv('USER_REFRESH_TOKEN_TIME','')
-JWT_SECRET_KEY=os.getenv('JWT_SECRET_KEY','')
 # 腾讯云对象存储相关数据
-COS_APPID=os.getenv('COS_APPID','')
-COS_PROTOCOL=os.getenv('COS_PROTOCOL','')
-COS_SECRET_ID=os.getenv('COS_SECRET_ID','')
-COS_SECRET_KEY=os.getenv('COS_SECRET_KEY','')
-COS_REGION=os.getenv('COS_REGION','')
-COS_TOKEN=os.getenv('COS_TOKEN',None)
-COS_BUCKET_NAME=os.getenv('COS_BUCKET_NAME','')
-COS_DOMAIN=os.getenv('COS_DOMAIN','')
-CDN_DOMAIN=os.getenv('CDN_DOMAIN','')
 
 SECRET_KEY=os.getenv('SECRET_KEY','')
 DEBUG=os.getenv('DEBUG',True)

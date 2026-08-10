@@ -5,6 +5,7 @@ from .views.task import *
 urlpatterns = [
     path('list', get_user_list, name='get_user_list'),
     path('login', user_login_admin_system, name='user_login_admin_system'),
+    path('refresh', user_refresh_token, name='user_refresh_token'),
     path('add', add_user_by_admin, name='add_user_by_admin'),
     path('set/role', set_user_role, name='set_user_role'),
     path('valid/code', get_valid_code, name='get_valid_code'),

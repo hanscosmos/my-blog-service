@@ -16,5 +16,5 @@ MODULE_CHOICES = [
     ('system', '系统'),
 ]
 
-WHITE_PATH_LIST = ['/user/valid/code', '/user/login', '/client/article/list']
+WHITE_PATH_LIST = ['/user/valid/code', '/user/login', '/user/refresh', '/client/article/list']
 

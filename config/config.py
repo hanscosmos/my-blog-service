@@ -6,6 +6,7 @@ import os
 @dataclass(frozen=True)
 class Config:
     INIT_USER_PASSWORD: str
+    ACCESS_TOKEN_WORK_TIME: float
     TOKEN_WORK_TIME: int
     USER_REFRESH_TOKEN_TIME: int
     JWT_SECRET_KEY: str
@@ -20,6 +21,7 @@ class Config:
     CDN_DOMAIN: str
 
 sysConfig = Config(INIT_USER_PASSWORD=os.getenv('INIT_USER_PASSWORD',''),
+                   ACCESS_TOKEN_WORK_TIME=float(os.getenv('ACCESS_TOKEN_WORK_TIME','0.5')),
                    TOKEN_WORK_TIME=int(os.getenv('TOKEN_WORK_TIME','0')),
                    USER_REFRESH_TOKEN_TIME=int(os.getenv('USER_REFRESH_TOKEN_TIME','0')),
                    JWT_SECRET_KEY=os.getenv('JWT_SECRET_KEY',''),

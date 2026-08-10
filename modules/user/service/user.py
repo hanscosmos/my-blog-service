@@ -38,11 +38,29 @@ def generate_token(data):
         'typ': 'jwt',
         'alg': 'HS256'
     }
+    token_time = sysConfig.ACCESS_TOKEN_WORK_TIME
+    secret_key = sysConfig.JWT_SECRET_KEY
+    exp = datetime.datetime.now() + datetime.timedelta(hours=token_time)
+    payload = {
+        'userInfo': json_handle(data),
+        'type': 'access',
+        'exp': exp
+    }
+    result = jwt.encode(payload=payload, key=secret_key, algorithm='HS256', headers=headers)
+    return result
+
+
+def generate_refresh_token(data):
+    headers = {
+        'typ': 'jwt',
+        'alg': 'HS256'
+    }
     token_time = sysConfig.TOKEN_WORK_TIME
     secret_key = sysConfig.JWT_SECRET_KEY
     exp = datetime.datetime.now() + datetime.timedelta(hours=token_time)
     payload = {
         'userInfo': json_handle(data),
+        'type': 'refresh',
         'exp': exp
     }
     result = jwt.encode(payload=payload, key=secret_key, algorithm='HS256', headers=headers)
