@@ -11,6 +11,7 @@ urlpatterns = [
     path('valid/code', get_valid_code, name='get_valid_code'),
     path('update/self', update_self_info, name='update_self_info'),
     path('get/self', get_self_info, name='get_self_info'),
+    path('stats', get_user_stats, name='get_user_stats'),
     path('article/list', get_user_article_list, name='get_self_article_list'),
     path('activity/list', get_self_activity_log, name="get_self_activity_log"),
     path('task/list', get_user_task_list, name='get_user_task_list'),

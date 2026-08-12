@@ -19,6 +19,9 @@ class Config:
     COS_BUCKET_NAME: str
     COS_DOMAIN: str
     CDN_DOMAIN: str
+    AI_API_KEY: str
+    AI_API_BASE_URL: str
+    AI_MODEL: str
 
 sysConfig = Config(INIT_USER_PASSWORD=os.getenv('INIT_USER_PASSWORD',''),
                    ACCESS_TOKEN_WORK_TIME=float(os.getenv('ACCESS_TOKEN_WORK_TIME','0.5')),
@@ -33,4 +36,7 @@ sysConfig = Config(INIT_USER_PASSWORD=os.getenv('INIT_USER_PASSWORD',''),
                    COS_REGION=os.getenv('COS_REGION',''),
                    COS_BUCKET_NAME=os.getenv('COS_BUCKET_NAME',''),
                    COS_DOMAIN=os.getenv('COS_DOMAIN',''),
-                   CDN_DOMAIN=os.getenv('CDN_DOMAIN',''))
+                   CDN_DOMAIN=os.getenv('CDN_DOMAIN',''),
+                   AI_API_KEY=os.getenv('AI_API_KEY',''),
+                   AI_API_BASE_URL=os.getenv('AI_API_BASE_URL','https://api.openai.com/v1'),
+                   AI_MODEL=os.getenv('AI_MODEL','gpt-4o'))

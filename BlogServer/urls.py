@@ -12,6 +12,7 @@ urlpatterns = [
     path('sys/', include('modules.system.urls')),
     path('client/', include('modules.client.urls')),
     path('blogger/', include('modules.blogger.urls')),
+    path('ai/', include('modules.ai.urls')),
 ]
 
 if settings.DEBUG:

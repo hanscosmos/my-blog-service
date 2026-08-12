@@ -12,7 +12,7 @@ from django.conf import settings
 from modules.article.models import Article, ArticleCategory
 from modules.article.serializers.article import ArticleSerializers
 from modules.authority.models import Role
-from modules.user.models import Users, UserProfile, UserAuthority, UserActivityLog
+from modules.user.models import Users, UserProfile, UserAuthority, UserActivityLog, UserTask
 from modules.user.serializers.user import UserSerializers
 from modules.user.service.user import validate_add_user_params, generate_token, generate_refresh_token, add_user_activity
 from utils.auth import get_user_id, validate_refresh_token
@@ -120,6 +120,7 @@ def get_self_info(request):
     user = Users.objects.get(id=user_id)
     user_profile = UserProfile.objects.get(id=user_id)
     user_info = {
+        'id': str(user.id),
         'nickName': user.nickName,
         'avatar': user.avatar,
         'bgCover': user_profile.bgCover,
@@ -177,6 +178,20 @@ def get_self_activity_log(request):
     user_id = get_user_id(request)
     sql = UserActivityLog.objects.filter(user=user_id).values(*['id', 'targetId', 'targetType', 'createTime', 'action'])
     return res_limit(params, sql)
+
+
+def get_user_stats(request):
+    """获取当前用户的统计数据（文章数、动态数、事项数）"""
+    user_id = get_user_id(request)
+    article_count = Article.objects.filter(author=user_id, isDelete=False).count()
+    activity_count = UserActivityLog.objects.filter(user=user_id).count()
+    task_count = UserTask.objects.filter(user=user_id).count()
+    stats = {
+        'articleCount': article_count,
+        'activityCount': activity_count,
+        'taskCount': task_count,
+    }
+    return res_handle(0, '查询成功', stats)
 
 
 @require_POST

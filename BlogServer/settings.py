@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     'modules.resource.apps.ResourceConfig',
     'modules.article.apps.ArticleConfig',
     'modules.blogger',
+    'modules.ai',
 ]
 
 MIDDLEWARE = [
