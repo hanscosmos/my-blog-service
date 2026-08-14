@@ -9,6 +9,8 @@ from django.middleware.csrf import get_token
 from django.views.decorators.http import require_POST
 
 from django.conf import settings
+
+
 from modules.article.models import Article, ArticleCategory
 from modules.article.serializers.article import ArticleSerializers
 from modules.authority.models import Role
@@ -16,7 +18,7 @@ from modules.user.models import Users, UserProfile, UserAuthority, UserActivityL
 from modules.user.serializers.user import UserSerializers
 from modules.user.service.user import validate_add_user_params, generate_token, generate_refresh_token, add_user_activity
 from utils.auth import get_user_id, validate_refresh_token
-from utils.response import res_handle, res_search, res_limit
+from utils.response import res_handle, res_search
 from utils.tools import post_handle, obj_has_attr, limit_queryset
 
 
@@ -111,7 +113,6 @@ def user_login_admin_system(request):
         'refreshToken': refresh_token,
         'csrfToken': csrf_token,
     }
-    add_user_activity(user.id, 'login', None, '登录', {})
     return res_handle(0, '登录成功', user_data)
 
 
@@ -173,11 +174,48 @@ def user_refresh_token(request):
     return res_handle(0, '刷新成功', {'token': new_access_token})
 
 
+ARTICLE_ACTIVITY_TYPES = ('publish_article', 'create_draft', 'update_article', 'delete_article')
+
+
 def get_self_activity_log(request):
     params = post_handle(request)
     user_id = get_user_id(request)
-    sql = UserActivityLog.objects.filter(user=user_id).values(*['id', 'targetId', 'targetType', 'createTime', 'action'])
-    return res_limit(params, sql)
+    sql = UserActivityLog.objects.filter(user=user_id).order_by('-createTime')
+    queryset_data = limit_queryset(params, sql)
+    result = []
+    for log in queryset_data['result']:
+        result.append({
+            'id': str(log.id),
+            'targetId': str(log.targetId) if log.targetId else None,
+            'targetType': log.targetType,
+            'action': log.action,
+            'createTime': log.createTime,
+            'extraData': log.extraData or {},
+            'article': _resolve_activity_article(log),
+        })
+    return res_search({'result': result, 'total': queryset_data['total']})
+
+
+def _resolve_activity_article(log):
+    """解析文章类动态关联的文章详情；文章已被删除则返回 None"""
+    if log.targetType not in ARTICLE_ACTIVITY_TYPES or not log.targetId:
+        return None
+    article_obj = Article.objects.filter(id=log.targetId, isDelete=False).first()
+    if not article_obj:
+        return None
+    category_name = None
+    if article_obj.category:
+        category_name = ArticleCategory.objects.filter(id=article_obj.category).values_list('name', flat=True).first()
+    return {
+        'id': str(article_obj.id),
+        'title': article_obj.title,
+        'cover': article_obj.cover,
+        'abstract': article_obj.abstract,
+        'status': article_obj.status,
+        'category': category_name,
+        'createTime': article_obj.createTime,
+        'updateTime': article_obj.updateTime,
+    }
 
 
 def get_user_stats(request):
@@ -198,7 +236,30 @@ def get_user_stats(request):
 def get_user_article_list(request):
     params = post_handle(request)
     user_id = get_user_id(request)
-    sql = Article.objects.all().filter(title__contains=params['title'], author=user_id)
+    sql = Article.objects.all().filter(author=user_id)
+    if obj_has_attr(params, 'title'):
+        sql = sql.filter(title__contains=params['title'])
+    if obj_has_attr(params, 'status'):
+        sql = sql.filter(status=params['status'])
+    if obj_has_attr(params, 'category') and params['category'] not in (0, '0', ''):
+        cate_ids = [params['category']]
+        child_ids = list(ArticleCategory.objects.filter(father=params['category']).values_list('id', flat=True))
+        cate_ids.extend(child_ids)
+        sql = sql.filter(category__in=cate_ids)
+    if obj_has_attr(params, 'startTime') and obj_has_attr(params, 'endTime'):
+        sql = sql.filter(createTime__range=(params['startTime'], params['endTime']))
+    # 按发布时间排序，默认倒序
+    sort_order = params.get('sortOrder') or 'descending'
+    order_prefix = '-' if sort_order == 'descending' else ''
+    sql = sql.order_by(f'{order_prefix}createTime')
     queryset_data = limit_queryset(params, sql)
     data = ArticleSerializers(instance=queryset_data['result'], many=True)
     return res_search({'result': data.data, 'total': queryset_data['total']})
+
+
+@require_POST
+def delete_user_activity(request):
+    params = post_handle(request)
+    user_id = get_user_id(request)
+    UserActivityLog.objects.filter(user=user_id, targetType=params['targetType']).delete()
+    return res_handle(0, '删除成功')

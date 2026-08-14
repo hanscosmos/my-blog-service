@@ -6,6 +6,7 @@ from django.views.decorators.http import require_POST
 from modules.user.models import UserTask
 from modules.user.serializers.task import UserTaskSerializers
 from modules.user.service.task import validate_add_task_params
+from modules.user.service.user import add_user_activity
 from django.db.models import Q, Sum, F
 from utils.auth import get_user_id
 from utils.response import res_handle, res_search
@@ -23,6 +24,10 @@ def get_user_task_list(request):
         sql = sql.filter(priority=params['priority'])
     if obj_has_attr(params, 'startTime') and obj_has_attr(params, 'endTime'):
         sql = sql.filter(deadline__range=(params['startTime'], params['endTime']))
+    # 按结束时间排序，默认倒序
+    sort_order = params.get('sortOrder') or 'descending'
+    order_prefix = '-' if sort_order == 'descending' else ''
+    sql = sql.order_by(f'{order_prefix}endTime')
     queryset_data = limit_queryset(params, sql)
     data = UserTaskSerializers(instance=queryset_data['result'], many=True)
     return res_search({'result': data.data, 'total': queryset_data['total']})
@@ -35,6 +40,17 @@ def get_user_task_panel_list(request):
     sql = UserTask.objects.all().filter(user=user_id).filter(
         Q(endTime__range=(params['startTime'], params['endTime'])) | Q(status='pending') | Q(status='todo'))
 
+    data = UserTaskSerializers(instance=sql, many=True)
+    return res_search(data.data)
+
+
+@require_POST
+def get_user_task_remind_list(request):
+    user_id = get_user_id(request)
+    sql = (UserTask.objects.all().filter(user=user_id)
+           .filter(status__in=['todo', 'pending'])
+           .filter(deadline__isnull=False)
+           .order_by('deadline'))
     data = UserTaskSerializers(instance=sql, many=True)
     return res_search(data.data)
 
@@ -55,7 +71,10 @@ def add_user_task(request):
     if msg:
         return res_handle(501, msg, False)
     params['user'] = get_user_id(request)
-    UserTask.objects.create(**params)
+    task = UserTask.objects.create(**params)
+    # 仅「待办/进行中」记录创建动态；直接记为已完成（补录历史）不产生动态
+    if params['status'] in ('todo', 'pending'):
+        add_user_activity(request, 'create_task', task.id, '创建事项', {'title': params['title']})
     return res_handle(0, '添加成功', True)
 
 
@@ -66,7 +85,11 @@ def edit_user_task(request):
     msg = validate_add_task_params(params)
     if msg:
         return res_handle(501, msg, False)
+    task = UserTask.objects.filter(id=params['id']).first()
+    was_done = task.status == 'done' if task else False
     UserTask.objects.filter(id=params['id']).update(**params)
+    if not was_done and params['status'] == 'done':
+        add_user_activity(request, 'complete_task', params['id'], '完成任务', {'title': params['title']})
     return res_handle(0, '修改成功', True)
 
 
@@ -123,10 +146,10 @@ def get_person_score_stats(request):
         )
         .annotate(period=trunc_func("endTime"))
         .values("period")
-        .annotate(total_score=Sum((F("importance") * 0.3 +
-                                   F("urgency") * 0.1 +
-                                   F("growth") * 0.4 +
-                                   F("happiness") * 0.2 -
+        .annotate(total_score=Sum((F("importance") * 0.7 +
+                                   F("urgency") * 0.3) * (
+                                   F("growth") * 0.7 +
+                                   F("happiness") * 0.3 -
                                    F("negative") * 1.0)))
         .order_by("period")
     )

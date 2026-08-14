@@ -66,10 +66,10 @@ def add_article(request):
     for item in params['tags']:
         tag_list.append(ArticleTagRelation(tag=item, article=article_obj.id))
     ArticleTagRelation.objects.bulk_create(tag_list)
-    activity_dict = {'type': 'publish_article' if params['status'] == 'publish' else 'create_draft',
-                     'action': '发表文章' if params['status'] == 'publish' else '创建草稿'}
-    add_user_activity(request, activity_dict['type'], article_obj.id,
-                      activity_dict['action'] + '-' + params['title'], {})
+    if params['status'] == 'publish':
+        add_user_activity(request, 'publish_article', article_obj.id, '发表文章', {'title': params['title']})
+    else:
+        add_user_activity(request, 'create_draft', article_obj.id, '创建草稿', {'title': params['title']})
     return res_handle(0, '添加成功', article_obj.id)
 
 
@@ -86,8 +86,9 @@ def edit_article(request):
         return res_handle(500, '您没有修改此文章的权限')
     if article_obj.status != 'publish' and params['status'] == 'publish':
         params['createTime'] = datetime.now()
-        add_user_activity(request, 'publish_article', article_obj.id,
-                          '发表文章' + '-' + params['title'], {})
+        add_user_activity(request, 'publish_article', article_obj.id, '发表文章', {'title': params['title']})
+    elif article_obj.status == 'publish' and params['status'] == 'publish':
+        add_user_activity(request, 'update_article', article_obj.id, '更新文章', {'title': params['title']})
     params['updateTime'] = datetime.now()
     exclude_keys = ['content', 'tags']
     model_params = {k: v for k, v in params.items() if k not in exclude_keys}
@@ -104,6 +105,9 @@ def edit_article(request):
 @require_POST
 def delete_article(request):
     params = post_handle(request)
+    article_obj = Article.objects.filter(id=params['id']).first()
+    title = article_obj.title if article_obj else ''
+    add_user_activity(request, 'delete_article', params['id'], '删除文章', {'title': title})
     Article.objects.filter(id=params['id']).delete()
     ArticleDetail.objects.filter(article=params['id']).delete()
     ArticleTagRelation.objects.filter(article=params['id']).delete()

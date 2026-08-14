@@ -71,14 +71,15 @@ class UserTask(models.Model):
     growth = models.IntegerField(default=3)          # 1-5
     happiness = models.IntegerField(default=3)       # 1-5
     negative = models.IntegerField(default=0)        # 0 ~ -5
+    remindBeforeMinutes = models.IntegerField(default=-1, db_column='remind_before_minutes')  # -1=不提醒，单位分钟
 
     @property
     def value_score(self):
-        return (self.importance * 0.3 +
-                self.urgency * 0.1 +
-                self.growth * 0.4 +
-                self.happiness * 0.2 -
-                self.negative * 1.0)
+        return (self.importance * 0.7 +
+                self.urgency * 0.3) * ( self.growth * 0.7 +
+                self.happiness * 0.3 - self.negative * 1.0)
+
+
 
     class Meta:
         db_table = 'sys_user_task'
