@@ -1,6 +1,7 @@
 from django.urls import path
 from .views.user import *
 from .views.task import *
+from .views.mood import *
 
 urlpatterns = [
     path('list', get_user_list, name='get_user_list'),
@@ -23,4 +24,7 @@ urlpatterns = [
     path('task/update', edit_user_task, name='edit_user_task'),
     path('task/delete', delete_user_task, name='delete_user_task'),
     path('task/score/stat', get_person_score_stats, name='get_person_score_stats'),
+    path('mood/list', get_user_mood_list, name='get_user_mood_list'),
+    path('mood/add', add_user_mood, name='add_user_mood'),
+    path('mood/delete', delete_user_mood, name='delete_user_mood'),
 ]

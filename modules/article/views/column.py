@@ -1,6 +1,6 @@
 from django.views.decorators.http import require_POST
 
-from modules.article.models import ArticleColumn
+from modules.article.models import ArticleColumn, Article
 from modules.article.service.column import validate_add_article_column_params
 from utils.auth import get_user_id
 from utils.response import res_handle, res_limit
@@ -32,6 +32,9 @@ def edit_column(request):
 @require_POST
 def delete_column(request):
     params = post_handle(request)
+    is_exist = Article.objects.filter(column__in=params['ids']).exists()
+    if is_exist:
+        return res_handle(500, '该专栏下存在文章，无法删除', False)
     sql = ArticleColumn.objects.filter(id__in=params['ids'])
     sql.delete()
     return res_handle(0, '删除成功', True)

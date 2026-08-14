@@ -124,3 +124,20 @@ class UserActivitySummary(models.Model):
         db_table = 'sys_user_activity_summary'
 
 
+class UserMood(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4)
+    user = models.UUIDField(db_column='user_id')
+    content = models.TextField(blank=True, default='')
+    mood = models.CharField(max_length=32, null=True, blank=True)  # 情绪 emoji
+    images = models.JSONField(default=list, blank=True)            # 图片 URL 数组
+    createTime = models.DateTimeField(auto_now_add=True, db_column='create_time')
+    updateTime = models.DateTimeField(auto_now=True, db_column='update_time')
+
+    class Meta:
+        db_table = 'sys_user_mood'
+        ordering = ['-createTime']
+        indexes = [
+            models.Index(fields=['user']),
+        ]
+
+
