@@ -17,6 +17,7 @@ urlpatterns = [
     path('activity/list', get_self_activity_log, name="get_self_activity_log"),
     path('activity/delete', delete_user_activity, name='delete_user_activity'),
     path('task/list', get_user_task_list, name='get_user_task_list'),
+    path('task/tag/list', get_user_task_tag_list, name='get_user_task_tag_list'),
     path('task/panel/list', get_user_task_panel_list, name='get_user_task_panel_list'),
     path('task/recent/list', get_user__recent_task_list, name='get_user__recent_task_list'),
     path('task/remind/list', get_user_task_remind_list, name='get_user_task_remind_list'),

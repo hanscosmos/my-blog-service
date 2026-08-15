@@ -1,16 +1,16 @@
 import datetime
 
-from django.db.models.functions import TruncMonth, TruncDate
+from django.db.models.functions import TruncMonth, TruncDate, Coalesce
 from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_POST
 from modules.user.models import UserTask
 from modules.user.serializers.task import UserTaskSerializers
 from modules.user.service.task import validate_add_task_params
 from modules.user.service.user import add_user_activity
-from django.db.models import Q, Sum, F
+from django.db.models import Q, Sum, F, Case, When, Value, IntegerField
 from utils.auth import get_user_id
 from utils.response import res_handle, res_search
-from utils.tools import post_handle, limit_queryset, obj_has_attr
+from utils.tools import post_handle, limit_queryset, obj_has_attr, int_handle
 
 
 @require_POST
@@ -22,15 +22,58 @@ def get_user_task_list(request):
         sql = sql.filter(status=params['status'])
     if obj_has_attr(params, 'priority'):
         sql = sql.filter(priority=params['priority'])
+    if obj_has_attr(params, 'keyword'):
+        sql = sql.filter(Q(title__icontains=params['keyword']) | Q(description__icontains=params['keyword']))
     if obj_has_attr(params, 'startTime') and obj_has_attr(params, 'endTime'):
         sql = sql.filter(deadline__range=(params['startTime'], params['endTime']))
-    # 按结束时间排序，默认倒序
+    # 排序：未完成（待办/进行中）排前，已完成/中止排后；
+    # 未完成组内按截止时间由近到远（无截止时间的排最后），已完成组按结束时间排序（默认倒序）
     sort_order = params.get('sortOrder') or 'descending'
     order_prefix = '-' if sort_order == 'descending' else ''
-    sql = sql.order_by(f'{order_prefix}endTime')
-    queryset_data = limit_queryset(params, sql)
-    data = UserTaskSerializers(instance=queryset_data['result'], many=True)
-    return res_search({'result': data.data, 'total': queryset_data['total']})
+    sql = sql.annotate(_status_rank=Case(
+        When(status='todo', then=Value(0)),
+        When(status='pending', then=Value(1)),
+        When(status='done', then=Value(2)),
+        When(status='aborted', then=Value(3)),
+        default=Value(4),
+        output_field=IntegerField(),
+    )).order_by(
+        '_status_rank',
+        f'{order_prefix}endTime',
+        Coalesce('deadline', Value(datetime.datetime(9999, 12, 31, 23, 59, 59))),
+    )
+
+    tag = params.get('tag')
+    if tag:
+        # tags 以逗号分隔存储，精确匹配需在内存中过滤
+        tasks = [t for t in sql if tag in (t.tags or '').split(',')]
+        total = len(tasks)
+        page_number = int_handle(params['pageNumber'])
+        page_size = int_handle(params['pageSize'])
+        start = (page_number - 1) * page_size
+        result = tasks[start:start + page_size]
+    else:
+        queryset_data = limit_queryset(params, sql)
+        result = queryset_data['result']
+        total = queryset_data['total']
+
+    data = UserTaskSerializers(instance=result, many=True)
+    return res_search({'result': data.data, 'total': total})
+
+
+@require_POST
+def get_user_task_tag_list(request):
+    user_id = get_user_id(request)
+    tasks = UserTask.objects.all().filter(user=user_id)
+    tag_count = {}
+    for task in tasks:
+        for tag in (task.tags or '').split(','):
+            tag = tag.strip()
+            if tag:
+                tag_count[tag] = tag_count.get(tag, 0) + 1
+    result = [{'name': name, 'count': count} for name, count in tag_count.items()]
+    result.sort(key=lambda x: x['count'], reverse=True)
+    return res_search(result)
 
 
 @require_POST

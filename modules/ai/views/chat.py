@@ -7,6 +7,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from config.config import sysConfig
 from modules.ai.models import AiConversation, AiMessage
+from modules.ai.tools import run_tool_loop
 from utils.auth import get_user_id
 from utils.tools import post_handle
 
@@ -75,74 +76,21 @@ def ai_chat(request):
     def event_stream():
         """
         SSE 事件流生成器
-        将上游 API 的流式响应逐块转发给前端，同时收集内容和 token 用量
+        先通过工具调用循环获取最终回复，再以 SSE 形式返回给前端
         """
         nonlocal collected_usage
 
         try:
-            upstream_response = requests.post(
-                f'{sysConfig.AI_API_BASE_URL}/chat/completions',
-                headers={
-                    'Authorization': f'Bearer {sysConfig.AI_API_KEY}',
-                    'Content-Type': 'application/json',
-                },
-                json={
-                    'model': model,
-                    'messages': messages,
-                    'stream': True,
-                    'stream_options': {'include_usage': True},
-                },
-                stream=True,
-                timeout=120,
-            )
-
-            if upstream_response.status_code != 200:
-                error_msg = f'上游 API 返回错误 ({upstream_response.status_code})'
-                try:
-                    error_body = upstream_response.json()
-                    if 'error' in error_body:
-                        error_msg = error_body['error'].get('message', error_msg)
-                except Exception:
-                    error_body = upstream_response.text[:200]
-                    if error_body:
-                        error_msg = f'{error_msg}: {error_body}'
-                yield f'data: {json.dumps({"error": error_msg})}\n\n'
-                yield 'data: [DONE]\n\n'
-                return
-
-            for line in upstream_response.iter_lines(decode_unicode=True):
-                if line:
-                    # 解析 OpenAI SSE 格式: "data: {...}"
-                    data_str = line[6:] if line.startswith('data: ') else ''
-                    if not data_str:
-                        continue
-
-                    if data_str == '[DONE]':
-                        yield 'data: [DONE]\n\n'
-                        continue
-
-                    try:
-                        chunk = json.loads(data_str)
-
-                        # 提取 delta 内容
-                        delta = chunk.get('choices', [{}])[0].get('delta', {})
-                        content_delta = delta.get('content', '')
-                        if content_delta:
-                            collected_content.append(content_delta)
-
-                        # 提取 token 用量（流式模式下，usage 在最后一个 chunk 中）
-                        usage = chunk.get('usage')
-                        if usage:
-                            collected_usage = {
-                                'prompt_tokens': usage.get('prompt_tokens'),
-                                'completion_tokens': usage.get('completion_tokens'),
-                            }
-                    except json.JSONDecodeError:
-                        pass
-
-                    # 原样转发给前端
-                    yield f'{line}\n\n'
-
+            final_content, usage = run_tool_loop(messages, model, user_id)
+            if usage:
+                collected_usage = {
+                    'prompt_tokens': usage.get('prompt_tokens'),
+                    'completion_tokens': usage.get('completion_tokens'),
+                }
+            if final_content:
+                collected_content.append(final_content)
+            yield f'data: {json.dumps({"content": final_content}, ensure_ascii=False)}\n\n'
+            yield 'data: [DONE]\n\n'
         except requests.exceptions.Timeout:
             logger.error('上游 API 请求超时')
             yield f'data: {json.dumps({"error": "AI 服务响应超时，请稍后重试"})}\n\n'
@@ -152,7 +100,7 @@ def ai_chat(request):
             yield f'data: {json.dumps({"error": "无法连接到 AI 服务，请检查网络和 API 配置"})}\n\n'
             yield 'data: [DONE]\n\n'
         except Exception as e:
-            logger.error(f'流式响应异常: {str(e)}')
+            logger.error(f'AI 服务异常: {str(e)}')
             yield f'data: {json.dumps({"error": f"AI 服务异常: {str(e)}"})}\n\n'
             yield 'data: [DONE]\n\n'
 

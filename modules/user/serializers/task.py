@@ -13,5 +13,5 @@ class UserTaskSerializers(ModelSerializer):
     def to_representation(self, obj):  # 此函数在序列化时才会用到，用于自定义输出
         ret = super(UserTaskSerializers, self).to_representation(obj)
         ret['score'] = obj.value_score
-        ret['tags'] = obj.tags.split(',')
+        ret['tags'] = [tag for tag in (obj.tags or '').split(',') if tag]
         return ret
