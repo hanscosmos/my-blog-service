@@ -3,6 +3,7 @@ from django.views.decorators.http import require_POST
 from modules.article.models import Article, ArticleDetail, ArticleTagRelation, ArticleCategory, ArticleTag, ArticleColumn, ArticleReadLog
 from modules.article.serializers.article import ArticleSerializers
 from modules.article.views.article import record_article_read
+from modules.blogger.models import BloggerProfile
 from modules.user.models import Users
 from utils.response import res_handle, res_search
 from utils.tools import post_handle, limit_queryset, obj_has_attr
@@ -115,3 +116,16 @@ def get_article_count_by_column(request):
         count = Article.objects.filter(column=col.id, status='publish', visible='public').count()
         result.append({'id': col.id, 'name': col.name, 'count': count})
     return res_search(result)
+
+
+@require_POST
+def get_client_blogger_profile(request):
+    """前台公开接口：仅返回博主简介，不暴露手机/微信/简历等隐私字段"""
+    user_id = get_user_id(request)
+    if user_id:
+        profile = BloggerProfile.objects.filter(userId=user_id).first()
+    else:
+        profile = BloggerProfile.objects.order_by('createdAt').first()
+    return res_handle(0, '查询成功', {
+        'introduction': profile.introduction if profile and profile.introduction else '',
+    })

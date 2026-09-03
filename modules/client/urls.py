@@ -14,5 +14,6 @@ urlpatterns = [
     path('article/stat/category', get_article_count_by_category, name="get_article_count_by_category"),
     path('article/stat/tag', get_article_count_by_tag, name="get_article_count_by_tag"),
     path('article/stat/column', get_article_count_by_column, name="get_article_count_by_column"),
+    path('blogger/profile/get', get_client_blogger_profile, name="get_client_blogger_profile"),
 
 ]
