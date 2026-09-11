@@ -8,13 +8,13 @@ COLOR_CHOICES = [
     ('pink', '粉色'),
 ]
 
-MODULE_CHOICES = [
-    ('article', '文章'),
-    ('resource', '资源'),
-    ('authority', '权限'),
-    ('users', '用户'),
-    ('system', '系统'),
-]
+# 菜单层级：目录 / 页面 / 按钮（操作）
+MENU_TYPE_DIR = '1'
+MENU_TYPE_PAGE = '2'
+MENU_TYPE_BUTTON = '3'
+
+# 内置超级管理员角色码，固定为 10000 且不可更改
+SUPER_ROLE_CODE = '10000'
 
 WHITE_PATH_LIST = ['/user/valid/code', '/user/login', '/user/refresh', '/client/article/list']
 

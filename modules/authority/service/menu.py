@@ -26,3 +26,13 @@ def validate_add_menu_params(params, menu_id):
     return msg
 
 
+def validate_delete_menu_params(ids):
+    msg: str = ''
+    if not ids:
+        msg = '请选择要删除的菜单'
+    elif Menu.objects.filter(father__in=ids).exists():
+        msg = '该菜单存在子菜单，无法删除'
+
+    return msg
+
+
