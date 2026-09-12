@@ -61,8 +61,14 @@ def get_all_menu_tree(request):
 
 
 def get_nav_menu_tree(request):
-    """按当前用户角色返回侧边栏菜单树（按钮节点不参与侧边栏渲染）"""
-    menu_list = list(Menu.objects.exclude(type=MENU_TYPE_BUTTON))
+    """按当前用户角色返回侧边栏菜单树
+
+    按钮节点与 isNav=False 的节点都不参与侧边栏渲染 —— 后者包括顶部导航栏入口、
+    系统设置、个人中心这些「全局」页面，它们参与授权但不上侧边栏。
+    直接按 isNav 过滤而不是 exclude：get_user_nav_menu_ids 会为子节点补齐祖先，
+    若只 exclude 会把「全局」这类隐藏目录的父链重新带回来，渲染出空目录。
+    """
+    menu_list = list(Menu.objects.filter(isNav=True).exclude(type=MENU_TYPE_BUTTON))
     user_id = get_user_id(request)
     if user_id:
         allowed_ids = get_user_nav_menu_ids(user_id)

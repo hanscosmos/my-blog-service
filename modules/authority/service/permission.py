@@ -8,9 +8,14 @@
     menu.type='3' 按钮节点，其 code 即操作权限码
 """
 
-from config.choices import MENU_TYPE_BUTTON
+from config.choices import MENU_TYPE_BUTTON, MENU_TYPE_PAGE
 from modules.authority.models import Menu, MenuAuthority, Role
 from modules.user.models import UserAuthority
+
+# 携带权限码的节点类型：目录（type='1'）只是容器，不参与权限码集合。
+# 页面节点也会带码 —— 顶部导航栏入口、系统设置这类「全局」节点没有前端路由，
+# 其可见性只能靠 code 表达，前端用同一个 `hasPerm(code)` 判断。
+PERMISSION_CODE_TYPES = (MENU_TYPE_PAGE, MENU_TYPE_BUTTON)
 
 
 def get_user_role_ids(user_id):
@@ -42,17 +47,22 @@ def get_user_menu_ids(user_id):
 
 
 def get_user_permission_codes(user_id):
-    """当前用户的操作权限码集合（按钮节点）"""
+    """当前用户的权限码集合（页面 + 按钮节点，目录不计）"""
     menu_ids = get_user_menu_ids(user_id)
     return list(
-        Menu.objects.filter(id__in=menu_ids, type=MENU_TYPE_BUTTON).values_list(
-            'code', flat=True
-        )
+        Menu.objects.filter(id__in=menu_ids, type__in=PERMISSION_CODE_TYPES)
+        .exclude(code='')
+        .values_list('code', flat=True)
     )
 
 
 def has_permission(user_id, code):
-    """是否拥有指定操作权限码"""
+    """是否拥有指定操作权限码
+
+    注意这里只认按钮节点（type='3'）。`PERMISSION_PATH_MAP` 里登记的都是按钮码，
+    页面节点的码只用于前端显隐；若将来要把某个页面码也用于接口校验，
+    需要把下面的 type 条件放宽到 ``type__in=PERMISSION_CODE_TYPES``。
+    """
     if is_super_user(user_id):
         return True
     return Menu.objects.filter(

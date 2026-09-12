@@ -8,7 +8,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.middleware.csrf import get_token
 from django.views.decorators.http import require_POST
 
-from django.conf import settings
+from config.config import sysConfig
 
 
 from modules.article.models import Article, ArticleCategory
@@ -45,7 +45,7 @@ def add_user_by_admin(request):
     authority_list: list = []
     if is_username_exist or is_email_exist:
         return res_handle(500, '用户名或者邮箱重复')
-    password = make_password(hashlib.md5(settings.INIT_USER_PASSWORD.encode('utf-8')).hexdigest())
+    password = make_password(hashlib.md5(sysConfig.INIT_USER_PASSWORD.encode('utf-8')).hexdigest())
     add_user_sql = Users.objects.create(username=username,
                                         nickName=nickname,
                                         password=password)
