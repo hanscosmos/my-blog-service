@@ -8,6 +8,7 @@ from modules.client.views import *
 urlpatterns = [
     path('article/detail', get_client_article_detail, name="get_article_detail"),
     path('article/list', get_client_article_list, name="get_article_list"),
+    path('article/archive', get_client_article_archive, name="get_client_article_archive"),
     path('article/hot', get_hot_article_list, name="get_hot_article_list"),
     path('article/category/tree', get_all_article_category_tree, name="get_all_article_category_tree"),
     path('article/read/stat', get_article_read_stat, name="get_article_read_stat"),

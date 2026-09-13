@@ -10,6 +10,11 @@ from utils.tools import post_handle, limit_queryset, obj_has_attr
 from utils.auth import get_user_id
 
 
+def get_client_visible_articles():
+    """前台可见文章：已发布 + 公开，草稿和「仅自己可见」都不展示"""
+    return Article.objects.filter(status='publish', visible='public')
+
+
 @require_POST
 def get_client_article_list(request):
     params = post_handle(request)
@@ -31,6 +36,18 @@ def get_client_article_list(request):
     queryset_data = limit_queryset(params, sql)
     data = ArticleSerializers(instance=queryset_data['result'], many=True)
     return res_search({'result': data.data, 'total': queryset_data['total']})
+
+
+@require_POST
+def get_client_article_archive(request):
+    """前台归档：只返回前台可见文章的 id/title/createTime，按时间倒序（不分页），支持按标签筛选"""
+    params = post_handle(request)
+    sql = get_client_visible_articles().order_by('-createTime')
+    if obj_has_attr(params, 'tag'):
+        article_ids = ArticleTagRelation.objects.filter(tag=params['tag']).values_list('article', flat=True)
+        sql = sql.filter(id__in=list(article_ids))
+    data = sql.values(*['id', 'title', 'createTime'])
+    return res_search(list(data))
 
 
 @require_POST
@@ -98,12 +115,18 @@ def get_article_count_by_category(request):
 
 @require_POST
 def get_article_count_by_tag(request):
-    """统计每个标签关联的文章数量"""
-    tags = ArticleTag.objects.all()
+    """统计每个标签下前台可见文章的数量，无可见文章的标签不返回"""
+    article_ids = list(get_client_visible_articles().values_list('id', flat=True))
+    relation_stat = (ArticleTagRelation.objects.filter(article__in=article_ids)
+                     .values('tag').annotate(count=Count('id')))
+    count_map = {row['tag']: row['count'] for row in relation_stat}
+
     result = []
-    for tag in tags:
-        count = ArticleTagRelation.objects.filter(tag=tag.id).count()
-        result.append({'id': tag.id, 'name': tag.name, 'count': count})
+    for tag in ArticleTag.objects.all():
+        count = count_map.get(tag.id, 0)
+        if not count:
+            continue
+        result.append({'id': tag.id, 'name': tag.name, 'alias': tag.alias, 'color': tag.color, 'count': count})
     return res_search(result)
 
 
