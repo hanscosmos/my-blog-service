@@ -1,11 +1,15 @@
 from django.urls import path
 from .views import *
+from .comment_views import *
 from modules.article.views.article import *
 from modules.article.views.category import *
 from modules.client.views import *
 
 
 urlpatterns = [
+    path('comment/list', get_client_comment_list, name="get_client_comment_list"),
+    path('comment/add', add_client_comment, name="add_client_comment"),
+    path('comment/delete', delete_client_comment, name="delete_client_comment"),
     path('article/detail', get_client_article_detail, name="get_article_detail"),
     path('article/list', get_client_article_list, name="get_article_list"),
     path('article/archive', get_client_article_archive, name="get_client_article_archive"),
