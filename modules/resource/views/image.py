@@ -2,7 +2,7 @@ from django.views.decorators.http import require_POST
 
 from modules.resource.models import Image, ImageCategory
 from modules.resource.service.common import validate_add_category_params
-from modules.resource.service.image import validate_add_image_params
+from modules.resource.service.image import validate_add_image_params, validate_batch_add_image_params
 from utils.response import res_handle, res_limit
 from utils.tools import post_handle
 
@@ -15,6 +15,20 @@ def add_image(request):
         return res_handle(501, False, msg)
     Image.objects.create(**params)
     return res_handle(0, '添加成功', True)
+
+
+@require_POST
+def add_image_batch(request):
+    params = post_handle(request)
+    valid_list, skip_list = validate_batch_add_image_params(params)
+    if not valid_list:
+        return res_handle(501, '没有可添加的图片：名称重复或长度不符', False)
+    Image.objects.bulk_create([Image(**item) for item in valid_list])
+    return res_handle(0, f'成功添加{len(valid_list)}张图片', {
+        'total': len(valid_list) + len(skip_list),
+        'success': len(valid_list),
+        'skipList': skip_list,
+    })
 
 
 @require_POST

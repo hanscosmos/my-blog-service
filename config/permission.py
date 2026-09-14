@@ -40,6 +40,7 @@ PERMISSION_PATH_MAP = {
     '/resource/icon/category/edit': 'resource:icon-category:update',
     '/resource/icon/category/delete': 'resource:icon-category:delete',
     '/resource/image/add': 'resource:image:add',
+    '/resource/image/batch/add': 'resource:image:add',
     '/resource/image/edit': 'resource:image:update',
     '/resource/image/delete': 'resource:image:delete',
     '/resource/image/category/add': 'resource:image-category:add',

@@ -13,6 +13,7 @@ urlpatterns = [
     path('icon/category/delete', delete_icon_category, name='delete_icon_category'),
     path('icon/category/list', get_icon_category_list, name='get_icon_category_list'),
     path('image/add', add_image, name='add_image'),
+    path('image/batch/add', add_image_batch, name='add_image_batch'),
     path('image/edit', edit_image, name='edit_image'),
     path('image/delete', delete_image, name='delete_image'),
     path('image/list', get_image_list, name='get_image_list'),
