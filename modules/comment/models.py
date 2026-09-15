@@ -19,7 +19,8 @@ class Comment(models.Model):
     targetId = models.UUIDField(null=True, blank=True, db_column='target_id')
     # 顶层评论为空；回复时指向所属顶层评论
     rootId = models.UUIDField(null=True, blank=True, db_column='root_id')
-    content = models.CharField(max_length=500, db_column='comment_content')
+    # 评论正文，存 markdown 源码（含图片链接），长度上限见 service/comment.py 的 MAX_CONTENT_LENGTH
+    content = models.TextField(db_column='comment_content')
     # 评论人；关联用户用裸 UUID，与项目其它模型一致
     user = models.UUIDField(db_column='user_id')
     # 被回复者，用于展示「A 回复 B」

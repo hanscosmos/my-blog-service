@@ -6,7 +6,8 @@ from modules.blogger.models import BloggerProfile
 # 允许的评论对象类型，新增评论类型（如随笔）时在这里扩展
 COMMENT_TARGET_TYPES = ('article', 'message')
 
-MAX_CONTENT_LENGTH = 500
+# 评论正文是 markdown 源码，图片链接本身就占几十个字符，上限需要留足空间
+MAX_CONTENT_LENGTH = 2000
 
 
 def is_valid_uuid(value):
