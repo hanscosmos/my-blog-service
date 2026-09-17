@@ -6,7 +6,7 @@ def build_user_map(user_ids):
     ids = [uid for uid in user_ids if uid]
     if not ids:
         return {}
-    users = Users.objects.filter(id__in=ids).values('id', 'nickName', 'avatar')
+    users = Users.objects.filter(id__in=ids).values('id', 'nickName', 'avatar', 'isForbidden')
     return {str(user['id']): user for user in users}
 
 
@@ -21,6 +21,21 @@ def format_user(user_map, user_id):
         'id': str(user['id']),
         'nickName': user['nickName'] or '匿名用户',
         'avatar': user['avatar'],
+    }
+
+
+def format_admin_comment_user(user_map, user_id):
+    """后台展示的用户信息：比前台多一个 isForbidden，供「禁用 / 解禁」按钮切换文案"""
+    if not user_id:
+        return None
+    user = user_map.get(str(user_id))
+    if not user:
+        return {'id': str(user_id), 'nickName': '已注销用户', 'avatar': None, 'isForbidden': False}
+    return {
+        'id': str(user['id']),
+        'nickName': user['nickName'] or '匿名用户',
+        'avatar': user['avatar'],
+        'isForbidden': user['isForbidden'],
     }
 
 

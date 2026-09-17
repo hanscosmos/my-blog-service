@@ -11,6 +11,8 @@ urlpatterns = [
     path('article/', include('modules.article.urls')),
     path('sys/', include('modules.system.urls')),
     path('client/', include('modules.client.urls')),
+    path('comment/', include('modules.comment.urls')),
+    path('notice/', include('modules.notice.urls')),
     path('blogger/', include('modules.blogger.urls')),
     path('ai/', include('modules.ai.urls')),
 ]

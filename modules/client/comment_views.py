@@ -1,3 +1,5 @@
+import logging
+
 from django.views.decorators.http import require_POST
 
 from modules.article.models import Article
@@ -10,9 +12,12 @@ from modules.comment.service.comment import (
     is_valid_uuid,
     validate_add_comment_params,
 )
+from modules.notice.service.notice import create_comment_notices
 from utils.auth import get_user_id
 from utils.response import res_handle, res_search
 from utils.tools import limit_queryset, post_handle
+
+logger = logging.getLogger(__name__)
 
 
 def get_visible_comments():
@@ -137,6 +142,12 @@ def add_client_comment(request):
     )
 
     target_author_id = get_target_author_id(target_type, target_id)
+    # 通知是评论的附带产物：写失败不回滚评论，只记日志
+    try:
+        create_comment_notices(comment, target_author_id)
+    except Exception as e:
+        logger.error(f'创建评论通知失败 comment_id={comment.id}: {str(e)}')
+
     user_map = build_user_map({comment.user, comment.replyUser})
     return res_handle(0, '评论成功', format_flat_comment(
         comment, user_map, can_delete_comment(user_id, comment.user, target_author_id)))

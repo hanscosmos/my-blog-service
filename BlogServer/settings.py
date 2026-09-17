@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     'modules.resource.apps.ResourceConfig',
     'modules.article.apps.ArticleConfig',
     'modules.comment.apps.CommentConfig',
+    'modules.notice.apps.NoticeConfig',
     'modules.blogger',
     'modules.ai',
 ]

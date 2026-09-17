@@ -57,4 +57,7 @@ PERMISSION_PATH_MAP = {
     '/user/add': 'system:user:add',
     '/user/set/role': 'system:user:role',
     '/blogger/profile/update': 'system:blogger:update',
+    # ---------- 评论模块（页面挂在「系统管理」下，权限码沿用 system: 前缀） ----------
+    '/comment/delete': 'system:comment:delete',
+    '/comment/forbid-user': 'system:comment:forbid-user',
 }
