@@ -19,5 +19,6 @@ urlpatterns = [
     path('stat', get_sys_stat, name='get_sys_stat'),
     path('self/stat', get_self_stats, name='get_self_stats'),
     path('market/overview', get_market_overview, name='get_market_overview'),
+    path('market/trend', get_market_trend, name='get_market_trend'),
 
 ]

@@ -18,7 +18,35 @@ TENCENT_URL = 'https://qt.gtimg.cn/q='
 SINA_URL = 'https://hq.sinajs.cn/list=fx_susdcnh'
 CFETS_URL = 'https://www.chinamoney.com.cn/r/cms/www/chinamoney/data/fx/ccpr.json'
 
-CN_ITEMS = [('sh000300', '沪深300'), ('sz399006', '创业板指'), ('sh000688', '科创50')]
+EASTMONEY_TREND_URL = 'https://push2his.eastmoney.com/api/qt/stock/trends2/get'
+EASTMONEY_KLINE_URL = 'https://push2his.eastmoney.com/api/qt/stock/kline/get'
+EASTMONEY_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 '
+                  '(KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+}
+
+TREND_SECID_MAP = {
+    'sh000001': '1.000001',
+    'sh000300': '1.000300',
+    'sz399006': '0.399006',
+    'sh000688': '1.000688',
+    'usINX': '100.SPX',
+    'usNDX': '100.NDX100',
+    'hf_XAU': '122.XAU',
+    'hf_XAG': '122.XAG',
+    'hf_OIL': '112.B00Y',
+    'hf_CL': '102.CL00Y',
+}
+TREND_PERIODS = ('minute', 'day', 'week', 'month')
+TREND_CACHE_TTL = {'minute': 30, 'day': 300, 'week': 300, 'month': 600}
+TREND_KLINE_LIMIT = 120
+
+CN_ITEMS = [
+    ('sh000001', '上证指数'),
+    ('sh000300', '沪深300'),
+    ('sz399006', '创业板指'),
+    ('sh000688', '科创50'),
+]
 US_ITEMS = [('usINX', '标普500'), ('usNDX', '纳斯达克100')]
 COMMODITY_ITEMS = [
     ('hf_XAU', '伦敦金'),
@@ -26,6 +54,8 @@ COMMODITY_ITEMS = [
     ('hf_OIL', '布伦特原油'),
     ('hf_CL', 'NYMEX原油'),
 ]
+# 国内金价由伦敦金（美元/盎司）按离岸人民币汇率折算（元/克）
+TROY_OUNCE_GRAMS = 31.1035
 TENCENT_CODES = [code for code, _ in CN_ITEMS + US_ITEMS + COMMODITY_ITEMS]
 
 STATUS_TEXT = {
@@ -227,6 +257,26 @@ def _build_group(key, name, status, items):
     }
 
 
+def _build_gold_cny_item(xau_quote, cnh_quote):
+    xau_quote = xau_quote or {}
+    cnh_quote = cnh_quote or {}
+    xau_price, xau_change = xau_quote.get('price'), xau_quote.get('change')
+    cnh_price, cnh_change = cnh_quote.get('price'), cnh_quote.get('change')
+    quote = {}
+    if None not in (xau_price, xau_change, cnh_price, cnh_change):
+        prev = (xau_price - xau_change) * (cnh_price - cnh_change) / TROY_OUNCE_GRAMS
+        price = xau_price * cnh_price / TROY_OUNCE_GRAMS
+        if prev:
+            quote = {
+                'price': round(price, 2),
+                'change': round(price - prev, 2),
+                'changePercent': round((price - prev) / prev * 100, 2),
+                'precision': 2,
+                'quoteTime': xau_quote.get('quoteTime', ''),
+            }
+    return _build_item('xau_cny', '国内金价（折算）', {'xau_cny': quote} if quote else {})
+
+
 def _build_overview():
     now_cn = datetime.now(CN_TZ)
     now_us = datetime.now(US_TZ)
@@ -277,6 +327,17 @@ def _build_overview():
     else:
         fx_items.append(_build_item('usdcny_ccpr', '人民币中间价', {}))
 
+    commodity_items = []
+    for code, name in COMMODITY_ITEMS:
+        commodity_items.append(_build_item(code, name, tencent_quotes))
+        if code == 'hf_XAU':
+            commodity_items.append(
+                _build_gold_cny_item(
+                    tencent_quotes.get('hf_XAU'),
+                    cnh_quote,
+                )
+            )
+
     return {
         'updateTime': now_cn.strftime('%Y-%m-%d %H:%M:%S'),
         'stale': False,
@@ -291,7 +352,7 @@ def _build_overview():
             ),
             _build_group(
                 'commodity', '贵金属 / 原油', commodity_status,
-                [_build_item(code, name, tencent_quotes) for code, name in COMMODITY_ITEMS],
+                commodity_items,
             ),
             _build_group('fx', '外汇', commodity_status, fx_items),
         ],
@@ -314,3 +375,98 @@ def get_market_overview_data(force=False):
             stale['stale'] = True
             return stale
         raise
+
+
+def _request_eastmoney_data(url, params):
+    resp = requests.get(
+        url,
+        params=params,
+        timeout=REQUEST_TIMEOUT,
+        headers=EASTMONEY_HEADERS,
+    )
+    resp.raise_for_status()
+    payload = resp.json()
+    data = payload.get('data')
+    if not data:
+        raise ValueError('东方财富行情数据为空')
+    return data
+
+
+def _fetch_trend_minute(secid):
+    data = _request_eastmoney_data(EASTMONEY_TREND_URL, {
+        'secid': secid,
+        'ndays': 1,
+        'iscr': 0,
+        'fields1': 'f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13',
+        'fields2': 'f51,f52,f53,f54,f55,f56,f57,f58',
+    })
+    points = []
+    for line in data.get('trends') or []:
+        fields = line.split(',')
+        if len(fields) < 8:
+            continue
+        points.append({
+            'time': fields[0],
+            'price': _to_float(fields[2]),
+            'avg': _to_float(fields[7]),
+            'volume': _to_float(fields[5]),
+        })
+    return {
+        'name': data.get('name', ''),
+        'precision': data.get('decimal', 2),
+        'preClose': _to_float(data.get('preClose')),
+        'points': points,
+    }
+
+
+KLINE_KLT_MAP = {'day': 101, 'week': 102, 'month': 103}
+
+
+def _fetch_trend_kline(secid, period):
+    data = _request_eastmoney_data(EASTMONEY_KLINE_URL, {
+        'secid': secid,
+        'klt': KLINE_KLT_MAP[period],
+        'fqt': 1,
+        'lmt': TREND_KLINE_LIMIT,
+        'end': '20500101',
+        'fields1': 'f1,f2,f3,f4,f5,f6',
+        'fields2': 'f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61',
+    })
+    items = []
+    for line in data.get('klines') or []:
+        fields = line.split(',')
+        if len(fields) < 6:
+            continue
+        items.append({
+            'date': fields[0],
+            'open': _to_float(fields[1]),
+            'close': _to_float(fields[2]),
+            'high': _to_float(fields[3]),
+            'low': _to_float(fields[4]),
+            'volume': _to_float(fields[5]),
+        })
+    return {
+        'name': data.get('name', ''),
+        'precision': data.get('decimal', 2),
+        'items': items,
+    }
+
+
+def get_market_trend_data(key, period='minute', force=False):
+    if key not in TREND_SECID_MAP:
+        raise KeyError('该行情暂不支持趋势查看')
+    if period not in TREND_PERIODS:
+        raise ValueError('不支持的周期')
+    cache_key = f'market:trend:{key}:{period}'
+    if not force:
+        cached = cache.get(cache_key)
+        if cached:
+            return cached
+    secid = TREND_SECID_MAP[key]
+    if period == 'minute':
+        trend = _fetch_trend_minute(secid)
+    else:
+        trend = _fetch_trend_kline(secid, period)
+    result = {'key': key, 'period': period, **trend}
+    cache.set(cache_key, result, TREND_CACHE_TTL[period])
+    return result
