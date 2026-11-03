@@ -2,6 +2,7 @@ from django.urls import path
 from .views.other import *
 from .views.dictionary import *
 from .views.updateLog import *
+from .views.market import *
 
 urlpatterns = [
     path('file/upload', upload_file, name='upload_file'),
@@ -17,5 +18,6 @@ urlpatterns = [
     path('updateLog/delete', delete_update_log, name='delete_update_log'),
     path('stat', get_sys_stat, name='get_sys_stat'),
     path('self/stat', get_self_stats, name='get_self_stats'),
+    path('market/overview', get_market_overview, name='get_market_overview'),
 
 ]
