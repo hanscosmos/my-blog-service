@@ -18,6 +18,7 @@ TENCENT_URL = 'https://qt.gtimg.cn/q='
 SINA_URL = 'https://hq.sinajs.cn/list=fx_susdcnh'
 CFETS_URL = 'https://www.chinamoney.com.cn/r/cms/www/chinamoney/data/fx/ccpr.json'
 
+EASTMONEY_QUOTE_URL = 'https://push2.eastmoney.com/api/qt/stock/get'
 EASTMONEY_TREND_URL = 'https://push2his.eastmoney.com/api/qt/stock/trends2/get'
 EASTMONEY_KLINE_URL = 'https://push2his.eastmoney.com/api/qt/stock/kline/get'
 EASTMONEY_HEADERS = {
@@ -32,6 +33,7 @@ TREND_SECID_MAP = {
     'sh000688': '1.000688',
     'usINX': '100.SPX',
     'usNDX': '100.NDX100',
+    'usd_index': '100.UDI',
     'hf_XAU': '122.XAU',
     'hf_XAG': '122.XAG',
     'hf_OIL': '112.B00Y',
@@ -56,6 +58,8 @@ COMMODITY_ITEMS = [
 ]
 # 国内金价由伦敦金（美元/盎司）按离岸人民币汇率折算（元/克）
 TROY_OUNCE_GRAMS = 31.1035
+# 美元指数走东方财富（腾讯无该品种），key 与趋势弹窗保持一致
+USD_INDEX_ITEM = ('usd_index', '美元指数', '100.UDI')
 TENCENT_CODES = [code for code, _ in CN_ITEMS + US_ITEMS + COMMODITY_ITEMS]
 
 STATUS_TEXT = {
@@ -257,6 +261,30 @@ def _build_group(key, name, status, items):
     }
 
 
+def _fetch_eastmoney_quote(secid):
+    data = _request_eastmoney_data(EASTMONEY_QUOTE_URL, {
+        'secid': secid,
+        'fields': 'f43,f57,f58,f59,f60,f86,f169,f170',
+    })
+    precision = int(data.get('f59') or 2)
+    scale = 10 ** precision
+    price = _to_float(data.get('f43'))
+    change = _to_float(data.get('f169'))
+    percent = _to_float(data.get('f170'))
+    quote_time = ''
+    timestamp = data.get('f86')
+    if timestamp:
+        quote_time = datetime.fromtimestamp(int(timestamp), CN_TZ).strftime('%Y-%m-%d %H:%M:%S')
+    return {
+        'price': round(price / scale, precision) if price is not None else None,
+        'change': round(change / scale, precision) if change is not None else None,
+        'changePercent': round(percent / 100, 2) if percent is not None else None,
+        'precision': precision,
+        'quoteTime': quote_time,
+        'quoteDate': quote_time[:10],
+    }
+
+
 def _build_gold_cny_item(xau_quote, cnh_quote):
     xau_quote = xau_quote or {}
     cnh_quote = cnh_quote or {}
@@ -281,7 +309,7 @@ def _build_overview():
     now_cn = datetime.now(CN_TZ)
     now_us = datetime.now(US_TZ)
 
-    tencent_quotes, cnh_quote, middle_price = {}, None, None
+    tencent_quotes, cnh_quote, middle_price, usd_index_quote = {}, None, None, None
     failed_fetches = 0
 
     try:
@@ -296,6 +324,10 @@ def _build_overview():
         middle_price = _fetch_cfets_middle_price()
     except Exception:
         failed_fetches += 1
+    try:
+        usd_index_quote = _fetch_eastmoney_quote(USD_INDEX_ITEM[2])
+    except Exception:
+        pass
 
     if failed_fetches == 3:
         raise RuntimeError('行情数据获取失败')
@@ -326,6 +358,13 @@ def _build_overview():
         })
     else:
         fx_items.append(_build_item('usdcny_ccpr', '人民币中间价', {}))
+    fx_items.append(
+        _build_item(
+            USD_INDEX_ITEM[0],
+            USD_INDEX_ITEM[1],
+            {USD_INDEX_ITEM[0]: usd_index_quote} if usd_index_quote else {},
+        )
+    )
 
     commodity_items = []
     for code, name in COMMODITY_ITEMS:
