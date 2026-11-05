@@ -33,6 +33,8 @@ TREND_SECID_MAP = {
     'sh000688': '1.000688',
     'usINX': '100.SPX',
     'usNDX': '100.NDX100',
+    'usDJI': '100.DJIA',
+    'usIXIC': '100.NDX',
     'usd_index': '100.UDI',
     'hf_XAU': '122.XAU',
     'hf_XAG': '122.XAG',
@@ -49,7 +51,12 @@ CN_ITEMS = [
     ('sz399006', '创业板指'),
     ('sh000688', '科创50'),
 ]
-US_ITEMS = [('usINX', '标普500'), ('usNDX', '纳斯达克100')]
+US_ITEMS = [
+    ('usINX', '标普500'),
+    ('usNDX', '纳斯达克100'),
+    ('usDJI', '道琼斯'),
+    ('usIXIC', '纳斯达克综合'),
+]
 COMMODITY_ITEMS = [
     ('hf_XAU', '伦敦金'),
     ('hf_XAG', '伦敦银'),
@@ -67,6 +74,25 @@ STATUS_TEXT = {
     'break': '午间休市',
     'closed': '已收盘',
     'holiday': '休市',
+}
+
+ITEM_SYMBOLS = {
+    'sh000001': 'SSE Composite',
+    'sh000300': 'CSI 300',
+    'sz399006': 'ChiNext',
+    'sh000688': 'STAR 50',
+    'usINX': 'S&P 500',
+    'usNDX': 'Nasdaq 100',
+    'usDJI': 'Dow Jones',
+    'usIXIC': 'Nasdaq Composite',
+    'hf_XAU': 'XAUUSD',
+    'xau_cny': 'XAU/CNY',
+    'hf_XAG': 'XAGUSD',
+    'hf_OIL': 'Brent',
+    'hf_CL': 'WTI',
+    'fx_susdcnh': 'USD/CNH',
+    'usdcny_ccpr': 'USD/CNY',
+    'usd_index': 'DXY',
 }
 
 
@@ -243,6 +269,7 @@ def _build_item(code, name, quotes):
     return {
         'key': code,
         'name': name,
+        'symbol': ITEM_SYMBOLS.get(code, ''),
         'price': quote.get('price'),
         'change': quote.get('change'),
         'changePercent': quote.get('changePercent'),
@@ -344,11 +371,12 @@ def _build_overview():
     )
     commodity_status = _market_status_commodity(now_cn)
 
-    fx_items = [_build_item('fx_susdcnh', 'USD/CNH 离岸人民币', {'fx_susdcnh': cnh_quote} if cnh_quote else {})]
+    fx_items = [_build_item('fx_susdcnh', '离岸人民币', {'fx_susdcnh': cnh_quote} if cnh_quote else {})]
     if middle_price:
         fx_items.append({
             'key': 'usdcny_ccpr',
             'name': '人民币中间价',
+            'symbol': ITEM_SYMBOLS.get('usdcny_ccpr', ''),
             'price': middle_price['price'],
             'change': None,
             'changePercent': None,
