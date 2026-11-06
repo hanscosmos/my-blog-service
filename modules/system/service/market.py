@@ -69,6 +69,10 @@ COMMODITY_ITEMS = [
     ('hf_OIL', '布伦特原油'),
     ('hf_CL', 'NYMEX原油'),
 ]
+# 上海黄金交易所 Au9999；key 保持稳定，避免自选失效
+SGE_GOLD_KEY = 'sge_gold'
+SGE_GOLD_NAME = 'Au9999'
+SGE_GOLD_SECID = '118.AU9999'
 # 美股指数期货走新浪（腾讯仅有标普500期货）
 US_FUTURES_ITEMS = [
     ('hf_NQ', '纳斯达克100期货'),
@@ -117,6 +121,7 @@ ITEM_SYMBOLS = {
     'fx_susdcnh': 'USD/CNH',
     'usdcny_ccpr': 'USD/CNY',
     'usd_index': 'DXY',
+    'sge_gold': 'AU9999',
 }
 
 
@@ -455,6 +460,11 @@ def _build_overview():
         except Exception:
             continue
 
+    try:
+        sge_gold_quote = _fetch_eastmoney_quote(SGE_GOLD_SECID)
+    except Exception:
+        sge_gold_quote = None
+
     if failed_fetches == 3:
         raise RuntimeError('行情数据获取失败')
 
@@ -472,7 +482,10 @@ def _build_overview():
     asia_status = _market_status_asia(now_cn)
     futures_status = _market_status_us_futures(now_us)
 
-    fx_items = [_build_item('fx_susdcnh', '离岸人民币', {'fx_susdcnh': cnh_quote} if cnh_quote else {})]
+    fx_items = [
+        _build_item('fx_susdcnh', '离岸人民币', {'fx_susdcnh': cnh_quote} if cnh_quote else {}),
+        _build_gold_cny_item(tencent_quotes.get('hf_XAU'), cnh_quote),
+    ]
     if middle_price:
         fx_items.append({
             'key': 'usdcny_ccpr',
@@ -498,11 +511,12 @@ def _build_overview():
     commodity_items = []
     for code, name in COMMODITY_ITEMS:
         commodity_items.append(_build_item(code, name, tencent_quotes))
-        if code == 'hf_XAU':
+        if code == 'hf_XAG':
             commodity_items.append(
-                _build_gold_cny_item(
-                    tencent_quotes.get('hf_XAU'),
-                    cnh_quote,
+                _build_item(
+                    SGE_GOLD_KEY,
+                    SGE_GOLD_NAME,
+                    {SGE_GOLD_KEY: sge_gold_quote} if sge_gold_quote else {},
                 )
             )
 
