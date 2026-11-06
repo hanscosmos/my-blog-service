@@ -13,9 +13,12 @@ REQUEST_TIMEOUT = 5
 
 CN_TZ = ZoneInfo('Asia/Shanghai')
 US_TZ = ZoneInfo('America/New_York')
+KOREA_TZ = ZoneInfo('Asia/Seoul')
+JAPAN_TZ = ZoneInfo('Asia/Tokyo')
+TAIPEI_TZ = ZoneInfo('Asia/Taipei')
 
 TENCENT_URL = 'https://qt.gtimg.cn/q='
-SINA_URL = 'https://hq.sinajs.cn/list=fx_susdcnh'
+SINA_URL = 'https://hq.sinajs.cn/list='
 CFETS_URL = 'https://www.chinamoney.com.cn/r/cms/www/chinamoney/data/fx/ccpr.json'
 
 EASTMONEY_QUOTE_URL = 'https://push2.eastmoney.com/api/qt/stock/get'
@@ -31,6 +34,9 @@ TREND_SECID_MAP = {
     'sh000300': '1.000300',
     'sz399006': '0.399006',
     'sh000688': '1.000688',
+    'kr_kospi': '100.KS11',
+    'jp_n225': '100.N225',
+    'tw_twii': '100.TWII',
     'usINX': '100.SPX',
     'usNDX': '100.NDX100',
     'usDJI': '100.DJIA',
@@ -63,6 +69,18 @@ COMMODITY_ITEMS = [
     ('hf_OIL', '布伦特原油'),
     ('hf_CL', 'NYMEX原油'),
 ]
+# 美股指数期货走新浪（腾讯仅有标普500期货）
+US_FUTURES_ITEMS = [
+    ('hf_NQ', '纳斯达克100期货'),
+    ('hf_ES', '标普500期货'),
+    ('hf_YM', '道琼斯期货'),
+]
+# 亚太指数走东方财富（腾讯无这些品种）
+ASIA_ITEMS = [
+    ('kr_kospi', '韩国KOSPI', '100.KS11'),
+    ('jp_n225', '日经225', '100.N225'),
+    ('tw_twii', '台湾加权', '100.TWII'),
+]
 # 国内金价由伦敦金（美元/盎司）按离岸人民币汇率折算（元/克）
 TROY_OUNCE_GRAMS = 31.1035
 # 美元指数走东方财富（腾讯无该品种），key 与趋势弹窗保持一致
@@ -81,6 +99,12 @@ ITEM_SYMBOLS = {
     'sh000300': 'CSI 300',
     'sz399006': 'ChiNext',
     'sh000688': 'STAR 50',
+    'kr_kospi': 'KOSPI',
+    'jp_n225': 'Nikkei 225',
+    'tw_twii': 'TAIEX',
+    'hf_NQ': 'NQ',
+    'hf_ES': 'ES',
+    'hf_YM': 'YM',
     'usINX': 'S&P 500',
     'usNDX': 'Nasdaq 100',
     'usDJI': 'Dow Jones',
@@ -133,13 +157,17 @@ def _parse_tencent_quote(raw):
         prev_close = _to_float(fields[7])
         precision = _precision(raw_price)
         change = None
+        change_percent = _to_float(fields[1])
         if price is not None and prev_close not in (None, 0):
             change = round(price - prev_close, precision)
+            # 新浪外盘期货不返回涨跌幅，按昨收自行计算
+            if change_percent is None:
+                change_percent = round(change / prev_close * 100, 2)
         quote_date = fields[12].strip()
         return {
             'price': price,
             'change': change,
-            'changePercent': _to_float(fields[1]),
+            'changePercent': change_percent,
             'precision': precision,
             'quoteTime': f'{quote_date} {fields[6].strip()}'.strip(),
             'quoteDate': quote_date,
@@ -181,9 +209,33 @@ def _fetch_tencent_quotes():
     return quotes
 
 
+def _fetch_sina_quotes(codes):
+    resp = requests.get(
+        SINA_URL + ','.join(codes),
+        timeout=REQUEST_TIMEOUT,
+        headers={'Referer': 'https://finance.sina.com.cn/'},
+    )
+    resp.raise_for_status()
+    text = resp.content.decode('gbk', errors='ignore')
+    quotes = {}
+    for line in text.split(';'):
+        line = line.strip()
+        if '="' not in line:
+            continue
+        var_name, raw_value = line.split('=', 1)
+        code = var_name.strip().removeprefix('var hq_str_')
+        raw = raw_value.strip().strip('"')
+        if not raw:
+            continue
+        parsed = _parse_tencent_quote(raw)
+        if parsed:
+            quotes[code] = parsed
+    return quotes
+
+
 def _fetch_sina_cnh():
     resp = requests.get(
-        SINA_URL,
+        SINA_URL + 'fx_susdcnh',
         timeout=REQUEST_TIMEOUT,
         headers={'Referer': 'https://finance.sina.com.cn/'},
     )
@@ -256,6 +308,43 @@ def _market_status_commodity(now):
     if time(5, 0) <= current < time(6, 0):
         return 'closed'
     return 'open'
+
+
+def _market_status_us_futures(now):
+    """CME Globex：周日 18:00 至周五 17:00（美东），每日 17:00-18:00 休市。"""
+    weekday, current = now.weekday(), now.time()
+    if weekday == 5:
+        return 'holiday'
+    if weekday == 6:
+        return 'open' if current >= time(18, 0) else 'holiday'
+    if weekday == 4:
+        return 'open' if current < time(17, 0) else 'holiday'
+    if time(17, 0) <= current < time(18, 0):
+        return 'closed'
+    return 'open'
+
+
+# 亚太各市场交易时段（当地时间）
+ASIA_SESSIONS = [
+    (KOREA_TZ, [(time(9, 0), time(15, 30))]),
+    (JAPAN_TZ, [(time(9, 0), time(11, 30)), (time(12, 30), time(15, 30))]),
+    (TAIPEI_TZ, [(time(9, 0), time(13, 30))]),
+]
+
+
+def _market_status_asia(now):
+    statuses = []
+    for tz, sessions in ASIA_SESSIONS:
+        local = now.astimezone(tz)
+        if local.weekday() >= 5:
+            statuses.append('holiday')
+        elif any(start <= local.time() < end for start, end in sessions):
+            statuses.append('open')
+        else:
+            statuses.append('closed')
+    if all(status == 'holiday' for status in statuses):
+        return 'holiday'
+    return 'open' if 'open' in statuses else 'closed'
 
 
 def _apply_holiday(status, quote_date, local_date):
@@ -337,6 +426,7 @@ def _build_overview():
     now_us = datetime.now(US_TZ)
 
     tencent_quotes, cnh_quote, middle_price, usd_index_quote = {}, None, None, None
+    futures_quotes, asia_quotes = {}, {}
     failed_fetches = 0
 
     try:
@@ -355,6 +445,15 @@ def _build_overview():
         usd_index_quote = _fetch_eastmoney_quote(USD_INDEX_ITEM[2])
     except Exception:
         pass
+    try:
+        futures_quotes = _fetch_sina_quotes([code for code, _ in US_FUTURES_ITEMS])
+    except Exception:
+        pass
+    for code, _name, secid in ASIA_ITEMS:
+        try:
+            asia_quotes[code] = _fetch_eastmoney_quote(secid)
+        except Exception:
+            continue
 
     if failed_fetches == 3:
         raise RuntimeError('行情数据获取失败')
@@ -370,6 +469,8 @@ def _build_overview():
         now_us.date(),
     )
     commodity_status = _market_status_commodity(now_cn)
+    asia_status = _market_status_asia(now_cn)
+    futures_status = _market_status_us_futures(now_us)
 
     fx_items = [_build_item('fx_susdcnh', '离岸人民币', {'fx_susdcnh': cnh_quote} if cnh_quote else {})]
     if middle_price:
@@ -414,8 +515,16 @@ def _build_overview():
                 [_build_item(code, name, tencent_quotes) for code, name in CN_ITEMS],
             ),
             _build_group(
+                'asia', '亚太市场', asia_status,
+                [_build_item(code, name, asia_quotes) for code, name, _ in ASIA_ITEMS],
+            ),
+            _build_group(
                 'us', '美股指数', us_status,
                 [_build_item(code, name, tencent_quotes) for code, name in US_ITEMS],
+            ),
+            _build_group(
+                'us_futures', '美股指数期货', futures_status,
+                [_build_item(code, name, futures_quotes) for code, name in US_FUTURES_ITEMS],
             ),
             _build_group(
                 'commodity', '贵金属 / 原油', commodity_status,
