@@ -5,6 +5,7 @@ from modules.system.service.market import (
     get_market_overview_data,
     get_market_trend_data,
 )
+from modules.system.service.market_news import get_market_news_data
 from utils.response import res_handle
 from utils.tools import post_handle
 
@@ -16,6 +17,19 @@ def get_market_overview(request):
     except Exception:
         params = {}
     data = get_market_overview_data(bool(params.get('force')))
+    return res_handle(0, '查询成功', data)
+
+
+@require_POST
+def get_market_news(request):
+    try:
+        params = post_handle(request)
+    except Exception:
+        params = {}
+    try:
+        data = get_market_news_data(bool(params.get('force')))
+    except Exception:
+        return res_handle(500, '资讯数据获取失败，请稍后重试')
     return res_handle(0, '查询成功', data)
 
 
