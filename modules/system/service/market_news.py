@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from email.utils import parsedate_to_datetime
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 import requests
@@ -12,8 +13,8 @@ from django.core.cache import cache
 CN_TZ = ZoneInfo('Asia/Shanghai')
 REQUEST_TIMEOUT = 5
 
-ARTICLES_CACHE_KEY = 'market:news:articles'
-ARTICLES_STALE_KEY = 'market:news:articles:stale'
+ARTICLES_CACHE_KEY = 'market:news:articles:v2'
+ARTICLES_STALE_KEY = 'market:news:articles:stale:v2'
 ARTICLES_CACHE_TTL = 300
 ARTICLES_STALE_TTL = 1800
 
@@ -22,8 +23,14 @@ FLASH_STALE_KEY = 'market:news:flash:stale'
 FLASH_CACHE_TTL = 60
 FLASH_STALE_TTL = 600
 
+HOT_CACHE_KEY = 'market:hot:sources'
+HOT_STALE_KEY = 'market:hot:sources:stale'
+HOT_CACHE_TTL = 300
+HOT_STALE_TTL = 1800
+
 NEWS_ITEM_LIMIT = 15
 FLASH_ITEM_LIMIT = 20
+HOT_ITEM_LIMIT = 20
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 '
@@ -35,7 +42,6 @@ SINA_FINANCE_PARAMS = {'pageid': 153, 'lid': 2516, 'num': 30, 'page': 1}
 
 CHINANEWS_FINANCE_URL = 'https://www.chinanews.com.cn/rss/finance.xml'
 CHINANEWS_WORLD_URL = 'https://www.chinanews.com.cn/rss/world.xml'
-CHINANEWS_SOCIETY_URL = 'https://www.chinanews.com.cn/rss/society.xml'
 CHINANEWS_SCROLL_URL = 'https://www.chinanews.com.cn/rss/scroll-news.xml'
 
 EASTMONEY_FLASH_URL = 'https://np-weblist.eastmoney.com/comm/web/getFastNewsList'
@@ -52,8 +58,18 @@ WSCN_LIVES_URL = 'https://api-one.wallstcn.com/apiv1/content/lives'
 WSCN_WORLD_CHANNEL = 'forex-channel'
 WSCN_FLASH_CHANNEL = 'us-stock-channel'
 
-CATEGORY_ORDER = ('finance', 'world', 'society')
-CATEGORY_NAMES = {'finance': '金融', 'world': '国际', 'society': '社会'}
+WEIBO_HOT_URL = 'https://weibo.com/ajax/side/hotSearch'
+WEIBO_HOT_HEADERS = {**HEADERS, 'Referer': 'https://weibo.com/'}
+
+BAIDU_HOT_URL = 'https://top.baidu.com/api/board'
+BAIDU_HOT_PARAMS = {'platform': 'pc', 'tab': 'realtime'}
+BAIDU_HOT_TAGS = {'1': '新', '3': '热'}
+
+HOT_SOURCE_ORDER = ('weibo', 'baidu')
+HOT_SOURCE_NAMES = {'weibo': '微博热搜', 'baidu': '百度热榜'}
+
+CATEGORY_ORDER = ('finance', 'world')
+CATEGORY_NAMES = {'finance': '金融', 'world': '国际'}
 
 _TAG_RE = re.compile(r'<[^>]+>')
 _SPACE_RE = re.compile(r'[\s　]+')
@@ -88,8 +104,8 @@ def _format_str(raw):
         return (raw or '')[:16]
 
 
-def _fetch_json(url, params):
-    resp = requests.get(url, params=params, headers=HEADERS, timeout=REQUEST_TIMEOUT)
+def _fetch_json(url, params=None, headers=None):
+    resp = requests.get(url, params=params, headers=headers or HEADERS, timeout=REQUEST_TIMEOUT)
     resp.raise_for_status()
     return resp.json()
 
@@ -189,6 +205,82 @@ def _fetch_eastmoney_flash():
     return items
 
 
+def _fetch_weibo_hot():
+    data = _fetch_json(WEIBO_HOT_URL, headers=WEIBO_HOT_HEADERS)
+    raw_items = ((data.get('data') or {}).get('realtime') or [])
+    items = []
+    for raw in raw_items:
+        title = _clean_text(raw.get('note') or raw.get('word'), 80)
+        if not title:
+            continue
+        rank = raw.get('realpos')
+        if not isinstance(rank, int) or rank <= 0:
+            rank = len(items) + 1
+        hot = raw.get('num')
+        word = raw.get('word_scheme') or raw.get('word') or title
+        items.append({
+            'rank': rank,
+            'title': title,
+            'hot': hot if isinstance(hot, int) and hot > 0 else None,
+            'tag': _clean_text(raw.get('label_name'), 4),
+            'url': f'https://s.weibo.com/weibo?q={quote(word)}',
+        })
+        if len(items) >= HOT_ITEM_LIMIT:
+            break
+    return items
+
+
+def _fetch_baidu_hot():
+    data = _fetch_json(BAIDU_HOT_URL, BAIDU_HOT_PARAMS)
+    cards = ((data.get('data') or {}).get('cards') or [])
+    raw_items = []
+    for card in cards:
+        content = card.get('content')
+        if isinstance(content, list) and content and isinstance(content[0], dict) and 'word' in content[0]:
+            raw_items = content
+            break
+
+    items = []
+    for raw in raw_items:
+        title = _clean_text(raw.get('word') or raw.get('query'), 80)
+        if not title:
+            continue
+        try:
+            hot = int(raw.get('hotScore'))
+        except (TypeError, ValueError):
+            hot = None
+        index = raw.get('index')
+        rank = index + 1 if isinstance(index, int) and index >= 0 else len(items) + 1
+        items.append({
+            'rank': rank,
+            'title': title,
+            'hot': hot if hot and hot > 0 else None,
+            'tag': BAIDU_HOT_TAGS.get(str(raw.get('hotTag') or ''), ''),
+            'url': raw.get('url') or raw.get('rawUrl') or '',
+        })
+        if len(items) >= HOT_ITEM_LIMIT:
+            break
+    return items
+
+
+def _build_hot_lists():
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        weibo_future = pool.submit(_safe_fetch, _fetch_weibo_hot)
+        baidu_future = pool.submit(_safe_fetch, _fetch_baidu_hot)
+
+    source_items = {
+        'weibo': weibo_future.result(),
+        'baidu': baidu_future.result(),
+    }
+    if not any(source_items.values()):
+        raise RuntimeError('热榜源均不可用')
+
+    return [
+        {'key': key, 'name': HOT_SOURCE_NAMES[key], 'items': source_items[key]}
+        for key in HOT_SOURCE_ORDER
+    ]
+
+
 def _categorize(items, category):
     return [{**item, 'category': category} for item in items]
 
@@ -215,11 +307,10 @@ def _safe_fetch(fetcher, *args):
 
 
 def _build_articles():
-    with ThreadPoolExecutor(max_workers=6) as pool:
+    with ThreadPoolExecutor(max_workers=5) as pool:
         sina_future = pool.submit(_safe_fetch, _fetch_sina_finance)
         cn_finance_future = pool.submit(_safe_fetch, _fetch_chinanews_feed, CHINANEWS_FINANCE_URL)
         cn_world_future = pool.submit(_safe_fetch, _fetch_chinanews_feed, CHINANEWS_WORLD_URL)
-        cn_society_future = pool.submit(_safe_fetch, _fetch_chinanews_feed, CHINANEWS_SOCIETY_URL)
         cn_scroll_future = pool.submit(_safe_fetch, _fetch_chinanews_feed, CHINANEWS_SCROLL_URL)
         wscn_future = pool.submit(_safe_fetch, _fetch_wscn_lives, WSCN_WORLD_CHANNEL)
 
@@ -243,11 +334,6 @@ def _build_articles():
             _categorize(cn_world_future.result(), 'world')
             + _categorize([item for item in scroll_items if '/gj/' in item['url']], 'world')
             + wscn_articles
-        ),
-        'society': _categorize(
-            cn_society_future.result()
-            + [item for item in scroll_items if '/sh/' in item['url']],
-            'society',
         ),
     }
 
@@ -339,4 +425,22 @@ def get_market_news_data(force=False):
         'stale': articles_stale or flashes_stale or articles_failed or flashes_failed,
         'categories': articles,
         'flashes': flashes,
+    }
+
+
+def get_market_hot_data(force=False):
+    sources, update_time, stale = _load_cached(
+        HOT_CACHE_KEY,
+        HOT_STALE_KEY,
+        HOT_CACHE_TTL,
+        HOT_STALE_TTL,
+        _build_hot_lists,
+        force,
+    )
+    if sources is None:
+        raise RuntimeError('热榜数据获取失败')
+    return {
+        'updateTime': update_time,
+        'stale': stale,
+        'sources': sources,
     }
