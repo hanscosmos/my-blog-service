@@ -16,6 +16,7 @@ US_TZ = ZoneInfo('America/New_York')
 KOREA_TZ = ZoneInfo('Asia/Seoul')
 JAPAN_TZ = ZoneInfo('Asia/Tokyo')
 TAIPEI_TZ = ZoneInfo('Asia/Taipei')
+HONG_KONG_TZ = ZoneInfo('Asia/Hong_Kong')
 
 TENCENT_URL = 'https://qt.gtimg.cn/q='
 SINA_URL = 'https://hq.sinajs.cn/list='
@@ -37,6 +38,8 @@ TREND_SECID_MAP = {
     'kr_kospi': '100.KS11',
     'jp_n225': '100.N225',
     'tw_twii': '100.TWII',
+    'hk_hsi': '100.HSI',
+    'hk_hstech': '124.HSTECH',
     'usINX': '100.SPX',
     'usNDX': '100.NDX100',
     'usDJI': '100.DJIA',
@@ -47,8 +50,8 @@ TREND_SECID_MAP = {
     'hf_OIL': '112.B00Y',
     'hf_CL': '102.CL00Y',
 }
-TREND_PERIODS = ('minute', 'day', 'week', 'month')
-TREND_CACHE_TTL = {'minute': 30, 'day': 300, 'week': 300, 'month': 600}
+TREND_PERIODS = ('minute', 'hour', 'day', 'week', 'month')
+TREND_CACHE_TTL = {'minute': 30, 'hour': 120, 'day': 300, 'week': 300, 'month': 600}
 TREND_KLINE_LIMIT = 120
 
 CN_ITEMS = [
@@ -81,6 +84,8 @@ US_FUTURES_ITEMS = [
 ]
 # 亚太指数走东方财富（腾讯无这些品种）
 ASIA_ITEMS = [
+    ('hk_hsi', '恒生指数', '100.HSI'),
+    ('hk_hstech', '恒生科技指数', '124.HSTECH'),
     ('kr_kospi', '韩国KOSPI', '100.KS11'),
     ('jp_n225', '日经225', '100.N225'),
     ('tw_twii', '台湾加权', '100.TWII'),
@@ -106,6 +111,8 @@ ITEM_SYMBOLS = {
     'kr_kospi': 'KOSPI',
     'jp_n225': 'Nikkei 225',
     'tw_twii': 'TAIEX',
+    'hk_hsi': 'HSI',
+    'hk_hstech': 'HSTECH',
     'hf_NQ': 'NQ',
     'hf_ES': 'ES',
     'hf_YM': 'YM',
@@ -334,6 +341,7 @@ ASIA_SESSIONS = [
     (KOREA_TZ, [(time(9, 0), time(15, 30))]),
     (JAPAN_TZ, [(time(9, 0), time(11, 30)), (time(12, 30), time(15, 30))]),
     (TAIPEI_TZ, [(time(9, 0), time(13, 30))]),
+    (HONG_KONG_TZ, [(time(9, 30), time(12, 0)), (time(13, 0), time(16, 0))]),
 ]
 
 
@@ -609,7 +617,7 @@ def _fetch_trend_minute(secid):
     }
 
 
-KLINE_KLT_MAP = {'day': 101, 'week': 102, 'month': 103}
+KLINE_KLT_MAP = {'hour': 60, 'day': 101, 'week': 102, 'month': 103}
 
 
 def _fetch_trend_kline(secid, period):
