@@ -82,13 +82,25 @@ US_FUTURES_ITEMS = [
     ('hf_ES', '标普500期货'),
     ('hf_YM', '道琼斯期货'),
 ]
-# 亚太指数走东方财富（腾讯无这些品种）
-ASIA_ITEMS = [
+# 港股指数走东方财富（腾讯无这些品种）
+HK_ITEMS = [
     ('hk_hsi', '恒生指数', '100.HSI'),
     ('hk_hstech', '恒生科技指数', '124.HSTECH'),
+]
+# 亚太指数走东方财富（腾讯无这些品种）
+ASIA_ITEMS = [
     ('kr_kospi', '韩国KOSPI', '100.KS11'),
     ('jp_n225', '日经225', '100.N225'),
     ('tw_twii', '台湾加权', '100.TWII'),
+]
+# 加密货币走新浪（美元计价，7×24 小时交易）
+CRYPTO_ITEMS = [
+    ('btc_btcbtcusd', '比特币', 'BTC/USD'),
+    ('btc_btcethusd', '以太坊', 'ETH/USD'),
+    ('btc_btcbnbusd', '币安币', 'BNB/USD'),
+    ('btc_btcsolusd', 'Solana', 'SOL/USD'),
+    ('btc_btcxrpusd', '瑞波币', 'XRP/USD'),
+    ('btc_btcadausd', '艾达币', 'ADA/USD'),
 ]
 # 国内金价由伦敦金（美元/盎司）按离岸人民币汇率折算（元/克）
 TROY_OUNCE_GRAMS = 31.1035
@@ -129,6 +141,12 @@ ITEM_SYMBOLS = {
     'usdcny_ccpr': 'USD/CNY',
     'usd_index': 'DXY',
     'sge_gold': 'AU9999',
+    'btc_btcbtcusd': 'BTC/USD',
+    'btc_btcethusd': 'ETH/USD',
+    'btc_btcbnbusd': 'BNB/USD',
+    'btc_btcsolusd': 'SOL/USD',
+    'btc_btcxrpusd': 'XRP/USD',
+    'btc_btcadausd': 'ADA/USD',
 }
 
 
@@ -200,6 +218,32 @@ def _parse_tencent_quote(raw):
     }
 
 
+def _parse_sina_crypto_quote(raw):
+    # 新浪加密行情字段：0 时间、3 最新价、6 最高、7 最低、8 今开、11 日期
+    fields = raw.split(',')
+    if len(fields) < 12:
+        return None
+    raw_price = fields[3].strip()
+    price = _to_float(raw_price)
+    open_price = _to_float(fields[8])
+    # 新浪固定返回 4 位小数，高价币按 2 位展示更符合习惯
+    precision = 2 if price is not None and price >= 100 else _precision(raw_price)
+    change = None
+    change_percent = None
+    if price is not None and open_price not in (None, 0):
+        change = round(price - open_price, precision)
+        change_percent = round(change / open_price * 100, 2)
+    quote_date = fields[11].strip()
+    return {
+        'price': price,
+        'change': change,
+        'changePercent': change_percent,
+        'precision': precision,
+        'quoteTime': f'{quote_date} {fields[0].strip()}'.strip(),
+        'quoteDate': quote_date,
+    }
+
+
 def _fetch_tencent_quotes():
     resp = requests.get(
         TENCENT_URL + ','.join(TENCENT_CODES),
@@ -221,7 +265,7 @@ def _fetch_tencent_quotes():
     return quotes
 
 
-def _fetch_sina_quotes(codes):
+def _fetch_sina_quotes(codes, parser=_parse_tencent_quote):
     resp = requests.get(
         SINA_URL + ','.join(codes),
         timeout=REQUEST_TIMEOUT,
@@ -239,7 +283,7 @@ def _fetch_sina_quotes(codes):
         raw = raw_value.strip().strip('"')
         if not raw:
             continue
-        parsed = _parse_tencent_quote(raw)
+        parsed = parser(raw)
         if parsed:
             quotes[code] = parsed
     return quotes
@@ -341,8 +385,19 @@ ASIA_SESSIONS = [
     (KOREA_TZ, [(time(9, 0), time(15, 30))]),
     (JAPAN_TZ, [(time(9, 0), time(11, 30)), (time(12, 30), time(15, 30))]),
     (TAIPEI_TZ, [(time(9, 0), time(13, 30))]),
-    (HONG_KONG_TZ, [(time(9, 30), time(12, 0)), (time(13, 0), time(16, 0))]),
 ]
+
+
+def _market_status_hk(now):
+    local = now.astimezone(HONG_KONG_TZ)
+    if local.weekday() >= 5:
+        return 'holiday'
+    current = local.time()
+    if time(9, 30) <= current < time(12, 0) or time(13, 0) <= current < time(16, 0):
+        return 'open'
+    if time(12, 0) <= current < time(13, 0):
+        return 'break'
+    return 'closed'
 
 
 def _market_status_asia(now):
@@ -439,7 +494,7 @@ def _build_overview():
     now_us = datetime.now(US_TZ)
 
     tencent_quotes, cnh_quote, middle_price, usd_index_quote = {}, None, None, None
-    futures_quotes, asia_quotes = {}, {}
+    futures_quotes, asia_quotes, crypto_quotes = {}, {}, {}
     failed_fetches = 0
 
     try:
@@ -462,6 +517,18 @@ def _build_overview():
         futures_quotes = _fetch_sina_quotes([code for code, _ in US_FUTURES_ITEMS])
     except Exception:
         pass
+    try:
+        crypto_quotes = _fetch_sina_quotes(
+            [code for code, _, _ in CRYPTO_ITEMS],
+            _parse_sina_crypto_quote,
+        )
+    except Exception:
+        pass
+    for code, _name, secid in HK_ITEMS:
+        try:
+            asia_quotes[code] = _fetch_eastmoney_quote(secid)
+        except Exception:
+            continue
     for code, _name, secid in ASIA_ITEMS:
         try:
             asia_quotes[code] = _fetch_eastmoney_quote(secid)
@@ -487,6 +554,11 @@ def _build_overview():
         now_us.date(),
     )
     commodity_status = _market_status_commodity(now_cn)
+    hk_status = _apply_holiday(
+        _market_status_hk(now_cn),
+        (asia_quotes.get('hk_hsi') or {}).get('quoteDate'),
+        datetime.now(HONG_KONG_TZ).date(),
+    )
     asia_status = _market_status_asia(now_cn)
     futures_status = _market_status_us_futures(now_us)
 
@@ -537,6 +609,10 @@ def _build_overview():
                 [_build_item(code, name, tencent_quotes) for code, name in CN_ITEMS],
             ),
             _build_group(
+                'hk', '港股指数', hk_status,
+                [_build_item(code, name, asia_quotes) for code, name, _ in HK_ITEMS],
+            ),
+            _build_group(
                 'asia', '亚太市场', asia_status,
                 [_build_item(code, name, asia_quotes) for code, name, _ in ASIA_ITEMS],
             ),
@@ -553,6 +629,10 @@ def _build_overview():
                 commodity_items,
             ),
             _build_group('fx', '外汇', commodity_status, fx_items),
+            _build_group(
+                'crypto', '加密货币', 'open',
+                [_build_item(code, name, crypto_quotes) for code, name, _ in CRYPTO_ITEMS],
+            ),
         ],
     }
 
