@@ -36,3 +36,29 @@ class UpdateLog(models.Model):
     class Meta:
         db_table = 'sys_update_log'
         ordering = ['createTime']
+
+
+class FundHolding(models.Model):
+    """用户基金持仓；category 表示资产类别，style 表示主动/被动管理方式"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, db_column='holding_id')
+    user = models.UUIDField(db_column='user_id')
+    fundCode = models.CharField(max_length=10, db_column='fund_code')
+    fundName = models.CharField(max_length=128, db_column='fund_name')
+    fundType = models.CharField(max_length=64, null=True, blank=True, db_column='fund_type')
+    category = models.CharField(max_length=16, db_column='category')
+    style = models.CharField(max_length=16, default='unknown', db_column='style')
+    shares = models.DecimalField(max_digits=18, decimal_places=4, db_column='shares')
+    costNav = models.DecimalField(max_digits=10, decimal_places=4, db_column='cost_nav')
+    remark = models.CharField(max_length=255, null=True, blank=True)
+    sort = models.IntegerField(default=0)
+    createTime = models.DateTimeField(auto_now_add=True, db_column='create_time')
+    updateTime = models.DateTimeField(auto_now=True, db_column='update_time')
+
+    class Meta:
+        db_table = 'sys_fund_holding'
+        db_table_comment = '用户基金持仓'
+        unique_together = ('user', 'fundCode')
+        indexes = [
+            models.Index(fields=['user'], name='idx_fund_holding_user'),
+        ]
+        ordering = ['sort', 'createTime']

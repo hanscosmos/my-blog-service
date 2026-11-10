@@ -3,6 +3,7 @@ from .views.other import *
 from .views.dictionary import *
 from .views.updateLog import *
 from .views.market import *
+from .views.fund import *
 
 urlpatterns = [
     path('file/upload', upload_file, name='upload_file'),
@@ -22,5 +23,9 @@ urlpatterns = [
     path('market/news', get_market_news, name='get_market_news'),
     path('market/hot', get_market_hot, name='get_market_hot'),
     path('market/trend', get_market_trend, name='get_market_trend'),
+    path('market/fund/portfolio', get_fund_portfolio, name='get_fund_portfolio'),
+    path('market/fund/search', search_market_fund, name='search_market_fund'),
+    path('market/fund/holding/save', save_fund_holding_view, name='save_fund_holding'),
+    path('market/fund/holding/delete', delete_fund_holding_view, name='delete_fund_holding'),
 
 ]
