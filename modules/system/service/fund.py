@@ -430,6 +430,18 @@ def get_fund_portfolio_data(user_id, force=False):
         total_cost += cost_amount
         total_realized_pnl += realized_pnl
 
+        # 已清仓基金不计入市值/今日/持仓收益，但已实现收益计入同类别累计
+        category_stat = category_map.setdefault(holding.category, {
+            'category': holding.category,
+            'count': 0,
+            'marketValue': Decimal('0'),
+            'todayPnl': Decimal('0'),
+            'todayPnlCount': 0,
+            'totalPnl': Decimal('0'),
+            'realizedPnl': Decimal('0'),
+        })
+        category_stat['realizedPnl'] += realized_pnl
+
         if status != 'cleared':
             if market_value is not None and holding_pnl is not None:
                 total_value += market_value
@@ -441,19 +453,13 @@ def get_fund_portfolio_data(user_id, force=False):
                 if market_value is not None:
                     total_today_prev_value += market_value - today_pnl
 
-            category_stat = category_map.setdefault(holding.category, {
-                'category': holding.category,
-                'count': 0,
-                'marketValue': Decimal('0'),
-                'todayPnl': Decimal('0'),
-                'totalPnl': Decimal('0'),
-            })
             category_stat['count'] += 1
             if market_value is not None and holding_pnl is not None:
                 category_stat['marketValue'] += market_value
                 category_stat['totalPnl'] += holding_pnl
             if today_pnl is not None:
                 category_stat['todayPnl'] += today_pnl
+                category_stat['todayPnlCount'] += 1
 
         items.append((item, market_value))
 
@@ -470,8 +476,17 @@ def get_fund_portfolio_data(user_id, force=False):
             'name': FUND_CATEGORY_NAMES.get(key, '其他'),
             'count': value['count'],
             'marketValue': _json_number(value['marketValue'], 2),
-            'todayPnl': _json_number(value['todayPnl'], 2),
+            'todayPnl': (
+                _json_number(value['todayPnl'], 2)
+                if value['todayPnlCount'] > 0
+                else None
+            ),
             'totalPnl': _json_number(value['totalPnl'], 2),
+            'realizedPnl': _json_number(value['realizedPnl'], 2),
+            'totalPnlIncludingRealized': _json_number(
+                value['totalPnl'] + value['realizedPnl'],
+                2,
+            ),
             'ratio': (
                 _json_number(value['marketValue'] / total_value * 100, 2)
                 if total_value > 0
@@ -483,6 +498,7 @@ def get_fund_portfolio_data(user_id, force=False):
             key=lambda item: item[1]['marketValue'],
             reverse=True,
         )
+        if value['count'] > 0
     ]
 
     summary = {
