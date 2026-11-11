@@ -49,6 +49,7 @@ class FundHolding(models.Model):
     style = models.CharField(max_length=16, default='unknown', db_column='style')
     shares = models.DecimalField(max_digits=18, decimal_places=4, db_column='shares')
     costNav = models.DecimalField(max_digits=10, decimal_places=4, db_column='cost_nav')
+    realizedPnl = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='realized_pnl')
     remark = models.CharField(max_length=255, null=True, blank=True)
     sort = models.IntegerField(default=0)
     createTime = models.DateTimeField(auto_now_add=True, db_column='create_time')

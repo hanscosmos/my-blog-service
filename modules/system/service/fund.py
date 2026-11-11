@@ -336,7 +336,13 @@ def get_fund_portfolio_data(user_id, force=False):
     holdings = list(
         FundHolding.objects.filter(user=user_id).order_by('sort', 'createTime')
     )
-    quote_data = get_fund_quotes([holding.fundCode for holding in holdings], force)
+    # 已清仓基金不参与当前市值和行情计算
+    quote_codes = [
+        holding.fundCode
+        for holding in holdings
+        if Decimal(str(holding.shares)) > 0
+    ]
+    quote_data = get_fund_quotes(quote_codes, force)
     quotes = quote_data.get('quotes') or {}
 
     total_cost = Decimal('0')
@@ -344,6 +350,7 @@ def get_fund_portfolio_data(user_id, force=False):
     total_today_pnl = Decimal('0')
     total_today_prev_value = Decimal('0')
     total_pnl = Decimal('0')
+    total_realized_pnl = Decimal('0')
     incomplete = False
     category_map = {}
     today = datetime.now(CN_TZ).strftime('%Y-%m-%d')
@@ -353,24 +360,40 @@ def get_fund_portfolio_data(user_id, force=False):
         quote = quotes.get(holding.fundCode) or {}
         shares = Decimal(str(holding.shares))
         cost_nav = Decimal(str(holding.costNav))
+        realized_pnl = Decimal(str(holding.realizedPnl or 0))
         cost_amount = shares * cost_nav
-        current_nav = _to_decimal(quote.get('currentNav'))
-        prev_nav = _to_decimal(quote.get('prevNav'))
 
-        market_value = shares * current_nav if current_nav is not None else None
-        today_pnl = _calc_today_pnl(shares, quote, holding.category, today)
-        holding_pnl = market_value - cost_amount if market_value is not None else None
-        total_return_rate = (
-            holding_pnl / cost_amount * 100
-            if holding_pnl is not None and cost_amount > 0
-            else None
-        )
-        previous_value = market_value - today_pnl if market_value is not None and today_pnl is not None else None
-        day_return_rate = (
-            today_pnl / previous_value * 100
-            if today_pnl is not None and previous_value is not None and previous_value > 0
-            else None
-        )
+        if shares == 0:
+            status = 'cleared'
+        elif realized_pnl != 0:
+            status = 'partial'
+        else:
+            status = 'holding'
+
+        if status == 'cleared':
+            market_value = Decimal('0')
+            today_pnl = None
+            holding_pnl = Decimal('0')
+            total_return_rate = None
+            day_return_rate = None
+        else:
+            current_nav = _to_decimal(quote.get('currentNav'))
+            prev_nav = _to_decimal(quote.get('prevNav'))
+
+            market_value = shares * current_nav if current_nav is not None else None
+            today_pnl = _calc_today_pnl(shares, quote, holding.category, today)
+            holding_pnl = market_value - cost_amount if market_value is not None else None
+            total_return_rate = (
+                holding_pnl / cost_amount * 100
+                if holding_pnl is not None and cost_amount > 0
+                else None
+            )
+            previous_value = market_value - today_pnl if market_value is not None and today_pnl is not None else None
+            day_return_rate = (
+                today_pnl / previous_value * 100
+                if today_pnl is not None and previous_value is not None and previous_value > 0
+                else None
+            )
 
         item = {
             'id': str(holding.id),
@@ -379,8 +402,10 @@ def get_fund_portfolio_data(user_id, force=False):
             'fundType': holding.fundType or '',
             'category': holding.category,
             'style': holding.style,
+            'status': status,
             'shares': _json_number(shares, 4),
             'costNav': _json_number(cost_nav, 4),
+            'realizedPnl': _json_number(realized_pnl, 2),
             'remark': holding.remark or '',
             'sort': holding.sort,
             'nav': quote.get('nav'),
@@ -403,36 +428,39 @@ def get_fund_portfolio_data(user_id, force=False):
         }
 
         total_cost += cost_amount
-        if market_value is not None and holding_pnl is not None:
-            total_value += market_value
-            total_pnl += holding_pnl
-        else:
-            incomplete = True
-        if today_pnl is not None:
-            total_today_pnl += today_pnl
-            if market_value is not None:
-                total_today_prev_value += market_value - today_pnl
+        total_realized_pnl += realized_pnl
 
-        category_stat = category_map.setdefault(holding.category, {
-            'category': holding.category,
-            'count': 0,
-            'marketValue': Decimal('0'),
-            'todayPnl': Decimal('0'),
-            'totalPnl': Decimal('0'),
-        })
-        category_stat['count'] += 1
-        if market_value is not None and holding_pnl is not None:
-            category_stat['marketValue'] += market_value
-            category_stat['totalPnl'] += holding_pnl
-        if today_pnl is not None:
-            category_stat['todayPnl'] += today_pnl
+        if status != 'cleared':
+            if market_value is not None and holding_pnl is not None:
+                total_value += market_value
+                total_pnl += holding_pnl
+            else:
+                incomplete = True
+            if today_pnl is not None:
+                total_today_pnl += today_pnl
+                if market_value is not None:
+                    total_today_prev_value += market_value - today_pnl
+
+            category_stat = category_map.setdefault(holding.category, {
+                'category': holding.category,
+                'count': 0,
+                'marketValue': Decimal('0'),
+                'todayPnl': Decimal('0'),
+                'totalPnl': Decimal('0'),
+            })
+            category_stat['count'] += 1
+            if market_value is not None and holding_pnl is not None:
+                category_stat['marketValue'] += market_value
+                category_stat['totalPnl'] += holding_pnl
+            if today_pnl is not None:
+                category_stat['todayPnl'] += today_pnl
 
         items.append((item, market_value))
 
     for item, market_value in items:
         item['ratio'] = (
             _json_number(market_value / total_value * 100, 2)
-            if market_value is not None and total_value > 0
+            if item['status'] != 'cleared' and market_value is not None and total_value > 0
             else None
         )
 
@@ -467,6 +495,8 @@ def get_fund_portfolio_data(user_id, force=False):
             if total_cost > 0
             else None
         ),
+        'totalRealizedPnl': _json_number(total_realized_pnl, 2),
+        'totalPnlIncludingRealized': _json_number(total_pnl + total_realized_pnl, 2),
         'todayReturnRate': (
             _json_number(total_today_pnl / total_today_prev_value * 100, 2)
             if total_today_prev_value > 0
@@ -484,13 +514,17 @@ def get_fund_portfolio_data(user_id, force=False):
     }
 
 
-def validate_fund_holding_params(fund_code, shares, cost_nav, category, style):
+def validate_fund_holding_params(fund_code, shares, cost_nav, realized_pnl, category, style):
     if not re.fullmatch(r'\d{6}', fund_code or ''):
         return '基金代码应为 6 位数字'
-    if shares is None or shares <= 0:
-        return '持有份额必须大于 0'
-    if cost_nav is None or cost_nav <= 0:
-        return '持仓成本价必须大于 0'
+    if shares is None or shares < 0:
+        return '持有份额不能小于 0'
+    if realized_pnl is None:
+        return '已实现收益格式不正确'
+    if cost_nav is None or cost_nav < 0:
+        return '持仓成本价不能小于 0'
+    if shares > 0 and cost_nav <= 0:
+        return '持有份额大于 0 时请填写持仓成本价'
     if category and category not in VALID_CATEGORIES:
         return '资产类别不正确'
     if style and style not in VALID_STYLES:
@@ -511,13 +545,22 @@ def save_fund_holding(user_id, params):
     fund_code = str(params.get('fundCode') or (holding.fundCode if holding else '')).strip()
     shares = _to_decimal(params.get('shares'))
     cost_nav = _to_decimal(params.get('costNav'))
+    realized_pnl = _to_decimal(params.get('realizedPnl'))
     shares = _round(shares, 4) if shares is not None else None
-    cost_nav = _round(cost_nav, 4) if cost_nav is not None else None
+    cost_nav = _round(cost_nav, 4) if cost_nav is not None else Decimal('0')
+    realized_pnl = _round(realized_pnl, 2) if realized_pnl is not None else Decimal('0')
     category = str(params.get('category') or '').strip()
     style = str(params.get('style') or '').strip()
     remark = str(params.get('remark') or '').strip()[:255]
 
-    msg = validate_fund_holding_params(fund_code, shares, cost_nav, category, style)
+    msg = validate_fund_holding_params(
+        fund_code,
+        shares,
+        cost_nav,
+        realized_pnl,
+        category,
+        style,
+    )
     if msg:
         raise ValueError(msg)
 
@@ -549,6 +592,7 @@ def save_fund_holding(user_id, params):
         holding.style = style
         holding.shares = shares
         holding.costNav = cost_nav
+        holding.realizedPnl = realized_pnl
         holding.remark = remark
         holding.sort = sort_value
         holding.save()
@@ -563,6 +607,7 @@ def save_fund_holding(user_id, params):
         style=style,
         shares=shares,
         costNav=cost_nav,
+        realizedPnl=realized_pnl,
         remark=remark,
         sort=sort_value,
     )
