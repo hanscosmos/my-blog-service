@@ -1,6 +1,6 @@
 import hashlib
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -240,6 +240,7 @@ def _build_fund_quote(raw):
         'name': raw.get('SHORTNAME') or '',
         'nav': _json_number(nav, 4),
         'navDate': nav_date,
+        'navChangePercent': _json_number(nav_change, 4),
         'estimateNav': _json_number(estimate_nav, 4),
         'estimateChangePercent': _json_number(estimate_change, 4),
         'estimateTime': estimate_time,
@@ -291,6 +292,46 @@ def get_fund_quotes(codes, force=False):
         raise
 
 
+def _previous_trading_day(today):
+    """上一个交易日（仅跳过周末，海外节假日按其净值日期自然顺延）"""
+    day = datetime.strptime(today, '%Y-%m-%d').date()
+    while True:
+        day -= timedelta(days=1)
+        if day.weekday() < 5:
+            return day.strftime('%Y-%m-%d')
+
+
+def _calc_today_pnl(shares, quote, category, today):
+    """当日收益口径：
+    海外/QDII 取昨日净值的变化（覆盖海外隔夜行情），净值尚未更新到昨日时不计入；
+    其余基金只认当天净值或当天盘中估值，当日数据未出时不计入。
+    """
+    data_mode = quote.get('dataMode') or 'none'
+    nav_date = str(quote.get('navDate') or '')
+
+    if category == 'overseas':
+        if nav_date != _previous_trading_day(today):
+            return None
+        nav = _to_decimal(quote.get('nav'))
+        nav_change = _to_decimal(quote.get('navChangePercent'))
+        # 兼容旧缓存中没有 navChangePercent 的行情
+        if nav_change is None and data_mode == 'nav':
+            nav_change = _to_decimal(quote.get('changePercent'))
+        if nav is None or nav_change is None or nav_change <= -100:
+            return None
+        prev_nav = nav / (Decimal('1') + nav_change / Decimal('100'))
+        return shares * (nav - prev_nav)
+
+    if data_mode == 'estimate' or (data_mode == 'nav' and nav_date == today):
+        current_nav = _to_decimal(quote.get('currentNav'))
+        prev_nav = _to_decimal(quote.get('prevNav'))
+        if current_nav is None or prev_nav is None:
+            return None
+        return shares * (current_nav - prev_nav)
+
+    return None
+
+
 def get_fund_portfolio_data(user_id, force=False):
     holdings = list(
         FundHolding.objects.filter(user=user_id).order_by('sort', 'createTime')
@@ -301,9 +342,11 @@ def get_fund_portfolio_data(user_id, force=False):
     total_cost = Decimal('0')
     total_value = Decimal('0')
     total_today_pnl = Decimal('0')
+    total_today_prev_value = Decimal('0')
     total_pnl = Decimal('0')
     incomplete = False
     category_map = {}
+    today = datetime.now(CN_TZ).strftime('%Y-%m-%d')
 
     items = []
     for holding in holdings:
@@ -315,11 +358,7 @@ def get_fund_portfolio_data(user_id, force=False):
         prev_nav = _to_decimal(quote.get('prevNav'))
 
         market_value = shares * current_nav if current_nav is not None else None
-        today_pnl = (
-            shares * (current_nav - prev_nav)
-            if current_nav is not None and prev_nav is not None
-            else None
-        )
+        today_pnl = _calc_today_pnl(shares, quote, holding.category, today)
         holding_pnl = market_value - cost_amount if market_value is not None else None
         total_return_rate = (
             holding_pnl / cost_amount * 100
@@ -371,6 +410,8 @@ def get_fund_portfolio_data(user_id, force=False):
             incomplete = True
         if today_pnl is not None:
             total_today_pnl += today_pnl
+            if market_value is not None:
+                total_today_prev_value += market_value - today_pnl
 
         category_stat = category_map.setdefault(holding.category, {
             'category': holding.category,
@@ -416,7 +457,6 @@ def get_fund_portfolio_data(user_id, force=False):
         )
     ]
 
-    previous_total_value = total_value - total_today_pnl
     summary = {
         'totalCost': _json_number(total_cost, 2),
         'totalMarketValue': _json_number(total_value, 2),
@@ -428,8 +468,8 @@ def get_fund_portfolio_data(user_id, force=False):
             else None
         ),
         'todayReturnRate': (
-            _json_number(total_today_pnl / previous_total_value * 100, 2)
-            if previous_total_value > 0
+            _json_number(total_today_pnl / total_today_prev_value * 100, 2)
+            if total_today_prev_value > 0
             else None
         ),
         'incomplete': incomplete,
