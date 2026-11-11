@@ -54,3 +54,21 @@ class ImageCategory(models.Model):
     class Meta:
         db_table = 'sys_image_category'
         ordering = ['sort']
+
+
+class Music(models.Model):
+    """音乐资源；playCount/listenSeconds 为累计播放次数与收听秒数"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, db_column='music_id')
+    name = models.CharField(max_length=64)
+    singer = models.CharField(max_length=64, blank=True, default='')
+    cover = models.URLField(blank=True, null=True)
+    url = models.URLField()
+    duration = models.IntegerField(default=0)
+    playCount = models.IntegerField(default=0, db_column='play_count')
+    listenSeconds = models.IntegerField(default=0, db_column='listen_seconds')
+    sort = models.IntegerField(default=0)
+    createTime = models.DateTimeField(auto_now_add=True, db_column='create_time')
+
+    class Meta:
+        db_table = 'sys_music'
+        ordering = ['sort', 'createTime']

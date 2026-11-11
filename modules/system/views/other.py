@@ -7,12 +7,19 @@ from utils.response import res_handle, res_search
 from utils.tools import post_handle
 from utils.upload import upload_file_to_server
 
+# 音频与音乐封面文件名带 nanoid、内容不会原地覆盖，适合长缓存
+MUSIC_CACHE_TYPES = ('music', 'music-cover')
+MUSIC_CACHE_CONTROL = 'public, max-age=31536000'
+
 
 # Create your views here.
 @require_POST
 def upload_file(request):
     params = request.POST
-    upload_result = upload_file_to_server(request.FILES['file'], params['name'], params['type'])
+    cache_control = MUSIC_CACHE_CONTROL if params['type'] in MUSIC_CACHE_TYPES else None
+    upload_result = upload_file_to_server(
+        request.FILES['file'], params['name'], params['type'], cache_control
+    )
     return res_handle(0, '上传成功', upload_result)
 
 

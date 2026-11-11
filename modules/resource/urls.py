@@ -1,6 +1,7 @@
 from django.urls import path
 from .views.icon import *
 from .views.image import *
+from .views.music import *
 
 
 urlpatterns = [
@@ -21,4 +22,12 @@ urlpatterns = [
     path('image/category/edit', edit_image_category, name='edit_image_category'),
     path('image/category/delete', delete_image_category, name='delete_image_category'),
     path('image/category/list', get_image_category_list, name='get_image_category_list'),
+    path('music/list', get_music_page_list, name='get_music_page_list'),
+    path('music/all', get_music_playlist, name='get_music_playlist'),
+    path('music/add', add_music_view, name='add_music'),
+    path('music/edit', edit_music_view, name='edit_music'),
+    path('music/delete', delete_music_view, name='delete_music'),
+    path('music/sort', sort_music_view, name='sort_music'),
+    path('music/play', play_music_view, name='play_music'),
+    path('music/stat', music_listen_stat_view, name='music_listen_stat'),
 ]
