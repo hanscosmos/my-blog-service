@@ -13,6 +13,8 @@ MUSIC_FIELDS = (
     'cover',
     'url',
     'duration',
+    'language',
+    'genre',
     'playCount',
     'listenSeconds',
     'sort',
@@ -50,6 +52,8 @@ def clean_music_params(params):
         'cover': str(params.get('cover') or '').strip(),
         'url': str(params.get('url') or '').strip(),
         'duration': duration,
+        'language': str(params.get('language') or '').strip(),
+        'genre': str(params.get('genre') or '').strip(),
     }
 
 
@@ -69,6 +73,10 @@ def validate_music_params(data, music_id=None):
         msg = '音频地址过长'
     elif data['duration'] < 0 or data['duration'] > 86400:
         msg = '音频时长不合法'
+    elif len(data['language']) > 32:
+        msg = '语种不合法'
+    elif len(data['genre']) > 32:
+        msg = '风格不合法'
     else:
         url_sql = Music.objects.filter(url=data['url'])
         if music_id:
@@ -86,10 +94,16 @@ def get_music_list(params):
     sql = Music.objects.all()
     name = str(params.get('name') or '').strip()
     singer = str(params.get('singer') or '').strip()
+    language = str(params.get('language') or '').strip()
+    genre = str(params.get('genre') or '').strip()
     if name:
         sql = sql.filter(name__contains=name)
     if singer:
         sql = sql.filter(singer__contains=singer)
+    if language:
+        sql = sql.filter(language=language)
+    if genre:
+        sql = sql.filter(genre=genre)
     return sql.order_by(*get_music_order_fields(params.get('sortBy'))).values(*MUSIC_FIELDS)
 
 
