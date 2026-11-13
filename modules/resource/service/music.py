@@ -1,9 +1,14 @@
-from uuid import UUID
+from urllib.parse import urlparse
+from uuid import UUID, uuid4
 
+import requests
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import transaction
 from django.db.models import F, Max
 
 from modules.resource.models import Music
+from modules.resource.service.music_meta import extract_music_metadata
+from utils.upload import upload_file_to_server
 
 # 列表返回字段，与前端 MusicItemType 保持一致
 MUSIC_FIELDS = (
@@ -15,6 +20,7 @@ MUSIC_FIELDS = (
     'duration',
     'language',
     'genre',
+    'lyric',
     'playCount',
     'listenSeconds',
     'sort',
@@ -30,6 +36,24 @@ MUSIC_ORDER_MAP = {
 
 # 单次上报的收听秒数上限，防止异常数据
 MAX_REPORT_SECONDS = 300
+
+# 歌词最大长度，需与前端保持一致
+MAX_LYRIC_LENGTH = 20000
+
+# 解析旧音频时允许下载的最大体积
+MAX_AUDIO_BYTES = 80 * 1024 * 1024
+
+# 从内嵌封面还原出的图片仍按音乐封面目录存储，并沿用长缓存策略
+MUSIC_COVER_TYPE = 'music-cover'
+MUSIC_COVER_CACHE_CONTROL = 'public, max-age=31536000'
+COVER_EXTENSION_MAP = {
+    'image/jpeg': 'jpg',
+    'image/jpg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'image/gif': 'gif',
+    'image/bmp': 'bmp',
+}
 
 
 def _is_uuid(value):
@@ -54,6 +78,7 @@ def clean_music_params(params):
         'duration': duration,
         'language': str(params.get('language') or '').strip(),
         'genre': str(params.get('genre') or '').strip(),
+        'lyric': str(params.get('lyric') or '').strip(),
     }
 
 
@@ -77,6 +102,8 @@ def validate_music_params(data, music_id=None):
         msg = '语种不合法'
     elif len(data['genre']) > 32:
         msg = '风格不合法'
+    elif len(data['lyric']) > MAX_LYRIC_LENGTH:
+        msg = f'歌词长度不得超过{MAX_LYRIC_LENGTH}'
     else:
         url_sql = Music.objects.filter(url=data['url'])
         if music_id:
@@ -168,3 +195,93 @@ def increase_listen_seconds(music_id, seconds):
     if not updated:
         raise ValueError('音乐不存在')
     return seconds
+
+
+def download_music_audio(url):
+    """下载已上传的音频文件，用于解析内嵌信息"""
+    parsed = urlparse(str(url or ''))
+    if parsed.scheme not in ('http', 'https') or not parsed.netloc:
+        raise ValueError('音频地址不合法')
+    try:
+        with requests.get(url, stream=True, timeout=(5, 60)) as response:
+            if response.status_code != 200:
+                raise ValueError('音频下载失败')
+            content_length = int(response.headers.get('Content-Length') or 0)
+            if content_length > MAX_AUDIO_BYTES:
+                raise ValueError('音频文件过大，无法解析')
+            buffer = bytearray()
+            for chunk in response.iter_content(chunk_size=256 * 1024):
+                if not chunk:
+                    continue
+                buffer.extend(chunk)
+                if len(buffer) > MAX_AUDIO_BYTES:
+                    raise ValueError('音频文件过大，无法解析')
+    except requests.RequestException:
+        raise ValueError('音频下载失败，请检查文件是否可以访问')
+    if not buffer:
+        raise ValueError('音频下载失败')
+    return bytes(buffer)
+
+
+def _upload_music_cover(data, mime):
+    """把解析出的封面按音乐封面目录上传到 COS"""
+    mime = (mime or '').lower()
+    extension = COVER_EXTENSION_MAP.get(mime, 'jpg')
+    file_name = f'{uuid4().hex}.{extension}'
+    upload = SimpleUploadedFile(file_name, data, content_type=mime or 'image/jpeg')
+    return upload_file_to_server(
+        upload, file_name, MUSIC_COVER_TYPE, MUSIC_COVER_CACHE_CONTROL
+    )
+
+
+def extract_music_embedded_info(music_id):
+    """
+    根据已上传的音频地址重新解析内嵌信息。
+
+    只补充空字段（名称/歌手/歌词/封面），已有内容不会被覆盖。
+    """
+    if not _is_uuid(music_id):
+        raise ValueError('音乐不存在')
+    music = Music.objects.filter(id=music_id).first()
+    if not music:
+        raise ValueError('音乐不存在')
+
+    audio_data = download_music_audio(music.url)
+    try:
+        info = extract_music_metadata(audio_data)
+    except ValueError:
+        raise
+    except Exception:
+        raise ValueError('音频解析失败')
+
+    updates = {}
+    updated = []
+    if not music.name and info['name']:
+        updates['name'] = info['name'][:64]
+        updated.append('name')
+    if not music.singer and info['singer']:
+        updates['singer'] = info['singer'][:64]
+        updated.append('singer')
+    lyric = (info['lyric'] or '').replace('﻿', '').strip()
+    if not music.lyric and lyric:
+        updates['lyric'] = lyric[:MAX_LYRIC_LENGTH]
+        updated.append('lyric')
+    if not music.cover and info['cover']:
+        try:
+            cover_url = _upload_music_cover(info['cover'], info['cover_mime'])
+        except Exception:
+            cover_url = ''
+        if cover_url:
+            updates['cover'] = cover_url
+            updated.append('cover')
+    if updates:
+        Music.objects.filter(id=music.id).update(**updates)
+
+    return {
+        'id': str(music.id),
+        'updated': updated,
+        'name': updates.get('name', music.name),
+        'singer': updates.get('singer', music.singer),
+        'lyric': updates.get('lyric', music.lyric),
+        'cover': updates.get('cover', music.cover or ''),
+    }

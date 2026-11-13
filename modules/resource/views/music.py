@@ -5,6 +5,7 @@ from modules.resource.service.music import (
     clean_music_params,
     create_music,
     delete_music,
+    extract_music_embedded_info,
     get_all_music,
     get_music_list,
     increase_listen_seconds,
@@ -132,3 +133,16 @@ def music_listen_stat_view(request):
     except ValueError as exc:
         return res_handle(501, str(exc), False)
     return res_handle(0, '记录成功', True)
+
+
+@require_POST
+def extract_music_view(request):
+    _, error = _get_super_user_id(request)
+    if error:
+        return error
+    try:
+        data = extract_music_embedded_info(_get_params(request).get('id'))
+    except ValueError as exc:
+        return res_handle(501, str(exc), False)
+    msg = '解析完成' if data['updated'] else '未发现可补充的内嵌信息'
+    return res_handle(0, msg, data)

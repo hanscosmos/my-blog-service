@@ -30,4 +30,5 @@ urlpatterns = [
     path('music/sort', sort_music_view, name='sort_music'),
     path('music/play', play_music_view, name='play_music'),
     path('music/stat', music_listen_stat_view, name='music_listen_stat'),
+    path('music/extract', extract_music_view, name='extract_music'),
 ]

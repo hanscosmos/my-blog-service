@@ -66,6 +66,7 @@ class Music(models.Model):
     duration = models.IntegerField(default=0)
     language = models.CharField(max_length=32, blank=True, default='')
     genre = models.CharField(max_length=32, blank=True, default='')
+    lyric = models.TextField(blank=True, default='')
     playCount = models.IntegerField(default=0, db_column='play_count')
     listenSeconds = models.IntegerField(default=0, db_column='listen_seconds')
     sort = models.IntegerField(default=0)
