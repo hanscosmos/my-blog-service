@@ -63,3 +63,31 @@ class FundHolding(models.Model):
             models.Index(fields=['user'], name='idx_fund_holding_user'),
         ]
         ordering = ['sort', 'createTime']
+
+
+class CashHolding(models.Model):
+    """用户现金/存款资产；kind=money_fund 表示余额宝等货币基金，deposit 表示银行存款"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, db_column='holding_id')
+    user = models.UUIDField(db_column='user_id')
+    kind = models.CharField(max_length=16, db_column='kind')
+    name = models.CharField(max_length=128, db_column='name')
+    fundCode = models.CharField(max_length=10, null=True, blank=True, db_column='fund_code')
+    balance = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True, db_column='balance')
+    principal = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True, db_column='principal')
+    annualRate = models.DecimalField(max_digits=8, decimal_places=4, null=True, blank=True, db_column='annual_rate')
+    yesterdayPnl = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True, db_column='yesterday_pnl')
+    startDate = models.DateField(null=True, blank=True, db_column='start_date')
+    endDate = models.DateField(null=True, blank=True, db_column='end_date')
+    interestType = models.CharField(max_length=16, null=True, blank=True, db_column='interest_type')
+    remark = models.CharField(max_length=255, null=True, blank=True)
+    sort = models.IntegerField(default=0)
+    createTime = models.DateTimeField(auto_now_add=True, db_column='create_time')
+    updateTime = models.DateTimeField(auto_now=True, db_column='update_time')
+
+    class Meta:
+        db_table = 'sys_cash_holding'
+        db_table_comment = '用户现金存款资产'
+        indexes = [
+            models.Index(fields=['user'], name='idx_cash_holding_user'),
+        ]
+        ordering = ['sort', 'createTime']

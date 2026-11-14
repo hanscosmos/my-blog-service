@@ -4,6 +4,7 @@ from .views.dictionary import *
 from .views.updateLog import *
 from .views.market import *
 from .views.fund import *
+from .views.cash import *
 
 urlpatterns = [
     path('file/upload', upload_file, name='upload_file'),
@@ -27,5 +28,8 @@ urlpatterns = [
     path('market/fund/search', search_market_fund, name='search_market_fund'),
     path('market/fund/holding/save', save_fund_holding_view, name='save_fund_holding'),
     path('market/fund/holding/delete', delete_fund_holding_view, name='delete_fund_holding'),
+    path('market/cash/portfolio', get_cash_portfolio, name='get_cash_portfolio'),
+    path('market/cash/holding/save', save_cash_holding_view, name='save_cash_holding'),
+    path('market/cash/holding/delete', delete_cash_holding_view, name='delete_cash_holding'),
 
 ]

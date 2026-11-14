@@ -292,6 +292,52 @@ def get_fund_quotes(codes, force=False):
         raise
 
 
+def get_money_fund_quotes(codes, force=False):
+    """货币基金行情：接口中 NAV 为万份收益、ACCNAV 为七日年化"""
+    codes = sorted({str(code).strip() for code in codes if str(code).strip()})
+    now_text = datetime.now(CN_TZ).strftime('%Y-%m-%d %H:%M:%S')
+    if not codes:
+        return {'updateTime': now_text, 'stale': False, 'quotes': {}}
+
+    digest = hashlib.md5(','.join(codes).encode('utf-8')).hexdigest()
+    cache_key = f'market:moneyfund:quotes:{digest}'
+    stale_key = f'{cache_key}:stale'
+
+    if not force:
+        cached = cache.get(cache_key)
+        if cached:
+            return cached
+
+    try:
+        raw_map = _fetch_fund_quotes(codes)
+        quotes = {}
+        for code in codes:
+            raw = raw_map.get(code)
+            if not raw:
+                continue
+            quotes[code] = {
+                'name': raw.get('SHORTNAME') or '',
+                'dailyIncome': _json_number(_to_decimal(raw.get('NAV')), 4),
+                'sevenDayRate': _json_number(_to_decimal(raw.get('ACCNAV')), 4),
+                'quoteDate': str(raw.get('PDATE') or '').strip(),
+            }
+        result = {
+            'updateTime': now_text,
+            'stale': False,
+            'quotes': quotes,
+        }
+        cache.set(cache_key, result, FUND_QUOTE_CACHE_TTL)
+        cache.set(stale_key, result, FUND_QUOTE_STALE_TTL)
+        return result
+    except Exception:
+        stale = cache.get(stale_key)
+        if stale:
+            fallback = dict(stale)
+            fallback['stale'] = True
+            return fallback
+        raise
+
+
 def _previous_trading_day(today):
     """上一个交易日（仅跳过周末，海外节假日按其净值日期自然顺延）"""
     day = datetime.strptime(today, '%Y-%m-%d').date()
