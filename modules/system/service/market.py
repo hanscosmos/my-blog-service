@@ -166,6 +166,16 @@ ITEM_SYMBOLS = {
     'btc_btcadausd': 'ADA/USD',
 }
 
+# 需要在行情条目中展示单位的品种；未列出的品种不展示单位
+ITEM_UNITS = {
+    'hf_XAU': '美元/盎司',
+    'hf_XAG': '美元/盎司',
+    'hf_OIL': '美元/桶',
+    'hf_CL': '美元/桶',
+    'sge_gold': '元/克',
+    'xau_cny': '元/克',
+}
+
 # 需要从东方财富取价的条目：港股、亚太、美元指数、上金所黄金
 EASTMONEY_QUOTE_ITEMS = (
     HK_ITEMS
@@ -574,6 +584,7 @@ def _build_item(code, name, quotes):
         'key': code,
         'name': name,
         'symbol': ITEM_SYMBOLS.get(code, ''),
+        'unit': ITEM_UNITS.get(code, ''),
         'price': quote.get('price'),
         'change': quote.get('change'),
         'changePercent': quote.get('changePercent'),
