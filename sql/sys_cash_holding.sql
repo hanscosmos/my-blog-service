@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS `sys_cash_holding` (
   `fund_code` varchar(10) DEFAULT NULL COMMENT '货币基金代码，默认 000198',
   `balance` decimal(18,2) DEFAULT NULL COMMENT '当前余额（货币基金）',
   `principal` decimal(18,2) DEFAULT NULL COMMENT '投入本金',
+  `amount_update_time` datetime(6) DEFAULT NULL COMMENT '最近一次手动更新余额（货币基金）/本金（存款）的时间',
   `annual_rate` decimal(8,4) DEFAULT NULL COMMENT '年化收益率(%)',
   `yesterday_pnl` decimal(18,2) DEFAULT NULL COMMENT '手填昨日收益，为空按行情预估',
   `start_date` date DEFAULT NULL COMMENT '存款起存日',

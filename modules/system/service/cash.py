@@ -3,11 +3,14 @@ from datetime import datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
+from django.utils import timezone
+
 from modules.system.models import CashHolding
 from modules.system.service.fund import (
     _is_uuid,
     _json_number,
     _round,
+    _time_text,
     _to_decimal,
     get_money_fund_quotes,
 )
@@ -68,6 +71,7 @@ def _build_money_fund_item(holding, quote):
         'fundCode': holding.fundCode or DEFAULT_MONEY_FUND_CODE,
         'balance': _json_number(balance, 2),
         'principal': _json_number(principal, 2),
+        'amountUpdateTime': _time_text(holding.amountUpdateTime),
         'annualRate': _json_number(annual_rate, 4),
         'yesterdayPnl': _json_number(yesterday_pnl, 2),
         'totalPnl': _json_number(total_pnl, 2),
@@ -123,6 +127,7 @@ def _build_deposit_item(holding, today):
         'fundCode': '',
         'balance': _json_number(balance, 2),
         'principal': _json_number(principal, 2),
+        'amountUpdateTime': _time_text(holding.amountUpdateTime),
         'annualRate': _json_number(annual_rate, 4),
         'yesterdayPnl': _json_number(yesterday_pnl, 2),
         'totalPnl': _json_number(total_pnl, 2),
@@ -332,13 +337,27 @@ def save_cash_holding(user_id, params):
             'interestType': interest_type,
         }
 
+    tracked_amount = fields['balance'] if kind == 'money_fund' else fields['principal']
     if holding:
+        old_amount = holding.balance if holding.kind == 'money_fund' else holding.principal
+        amount_changed = (
+            holding.kind != kind
+            or old_amount is None
+            or Decimal(str(old_amount)) != Decimal(str(tracked_amount))
+        )
         for key, value in fields.items():
             setattr(holding, key, value)
+        # 只有余额/本金真正变化时才刷新更新时间，改备注等字段不刷新
+        if amount_changed:
+            holding.amountUpdateTime = timezone.now()
         holding.save()
         return holding
 
-    return CashHolding.objects.create(user=user_id, **fields)
+    return CashHolding.objects.create(
+        user=user_id,
+        amountUpdateTime=timezone.now(),
+        **fields,
+    )
 
 
 def delete_cash_holdings(user_id, ids):

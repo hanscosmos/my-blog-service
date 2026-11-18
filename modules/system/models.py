@@ -50,6 +50,8 @@ class FundHolding(models.Model):
     shares = models.DecimalField(max_digits=18, decimal_places=4, db_column='shares')
     costNav = models.DecimalField(max_digits=10, decimal_places=4, db_column='cost_nav')
     realizedPnl = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='realized_pnl')
+    # 份额最近一次被手动修改的时间；改备注/类别等字段不会刷新
+    sharesUpdateTime = models.DateTimeField(null=True, blank=True, db_column='shares_update_time')
     remark = models.CharField(max_length=255, null=True, blank=True)
     sort = models.IntegerField(default=0)
     createTime = models.DateTimeField(auto_now_add=True, db_column='create_time')
@@ -74,6 +76,8 @@ class CashHolding(models.Model):
     fundCode = models.CharField(max_length=10, null=True, blank=True, db_column='fund_code')
     balance = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True, db_column='balance')
     principal = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True, db_column='principal')
+    # 余额（货币基金）或本金（存款）最近一次被手动修改的时间
+    amountUpdateTime = models.DateTimeField(null=True, blank=True, db_column='amount_update_time')
     annualRate = models.DecimalField(max_digits=8, decimal_places=4, null=True, blank=True, db_column='annual_rate')
     yesterdayPnl = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True, db_column='yesterday_pnl')
     startDate = models.DateField(null=True, blank=True, db_column='start_date')

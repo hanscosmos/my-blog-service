@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 from django.core.cache import cache
+from django.utils import timezone
 
 from modules.system.models import FundHolding
 
@@ -48,6 +49,10 @@ def _round(value, places):
 def _json_number(value, places):
     rounded = _round(value, places)
     return None if rounded is None else float(rounded)
+
+
+def _time_text(value):
+    return value.strftime('%Y-%m-%d %H:%M:%S') if value else ''
 
 
 def _to_decimal(value):
@@ -452,6 +457,7 @@ def get_fund_portfolio_data(user_id, force=False):
             'shares': _json_number(shares, 4),
             'costNav': _json_number(cost_nav, 4),
             'realizedPnl': _json_number(realized_pnl, 2),
+            'sharesUpdateTime': _time_text(holding.sharesUpdateTime),
             'remark': holding.remark or '',
             'sort': holding.sort,
             'nav': quote.get('nav'),
@@ -646,6 +652,7 @@ def save_fund_holding(user_id, params):
         style = meta['style'] if meta else (holding.style if holding else 'unknown')
 
     if holding:
+        shares_changed = Decimal(str(holding.shares)) != shares
         holding.fundCode = fund_code
         if meta:
             holding.fundName = meta['name']
@@ -657,6 +664,9 @@ def save_fund_holding(user_id, params):
         holding.realizedPnl = realized_pnl
         holding.remark = remark
         holding.sort = sort_value
+        # 只有份额真正变化（或换成了另一只基金）才刷新更新时间
+        if shares_changed or code_changed:
+            holding.sharesUpdateTime = timezone.now()
         holding.save()
         return holding
 
@@ -670,6 +680,7 @@ def save_fund_holding(user_id, params):
         shares=shares,
         costNav=cost_nav,
         realizedPnl=realized_pnl,
+        sharesUpdateTime=timezone.now(),
         remark=remark,
         sort=sort_value,
     )
