@@ -6,6 +6,7 @@ from .views.market import *
 from .views.fund import *
 from .views.cash import *
 from .views.holding import *
+from .views.overview import *
 
 urlpatterns = [
     path('file/upload', upload_file, name='upload_file'),
@@ -35,4 +36,6 @@ urlpatterns = [
     path('market/holding/history', get_holding_history_view, name='get_holding_history'),
     path('market/holding/remind', get_holding_remind_view, name='get_holding_remind'),
     path('market/holding/snapshot/record', record_holding_snapshot_view, name='record_holding_snapshot'),
+    path('overview/weather', get_weather_overview, name='get_weather_overview'),
+    path('overview/hardware', get_hardware_overview, name='get_hardware_overview'),
 ]
