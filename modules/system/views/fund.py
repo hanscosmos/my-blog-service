@@ -7,6 +7,7 @@ from modules.system.service.fund import (
     save_fund_holding,
     search_funds,
 )
+from modules.system.service.holding import record_holding_snapshot
 from utils.auth import get_user_id
 from utils.response import res_handle
 from utils.tools import post_handle
@@ -19,6 +20,14 @@ def _get_super_user_id(request):
     if not is_super_user(user_id):
         return None, res_handle(403, '该功能仅超级管理员可用', None)
     return user_id, None
+
+
+def _record_snapshot_safely(user_id):
+    """持仓变化后记录当天快照；失败不影响保存/删除本身"""
+    try:
+        record_holding_snapshot(user_id)
+    except Exception:
+        pass
 
 
 @require_POST
@@ -71,6 +80,7 @@ def save_fund_holding_view(request):
         return res_handle(501, str(exc), False)
     except Exception:
         return res_handle(500, '持仓保存失败，请稍后重试', False)
+    _record_snapshot_safely(user_id)
     return res_handle(0, '保存成功', True)
 
 
@@ -89,4 +99,5 @@ def delete_fund_holding_view(request):
         return res_handle(501, str(exc), False)
     except Exception:
         return res_handle(500, '持仓删除失败，请稍后重试', False)
+    _record_snapshot_safely(user_id)
     return res_handle(0, '删除成功', True)

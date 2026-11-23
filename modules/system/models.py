@@ -67,6 +67,29 @@ class FundHolding(models.Model):
         ordering = ['sort', 'createTime']
 
 
+class HoldingSnapshot(models.Model):
+    """用户持仓每日快照；同一天多次保存只保留最后一条"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, db_column='snapshot_id')
+    user = models.UUIDField(db_column='user_id')
+    snapshotDate = models.DateField(db_column='snapshot_date')
+    totalValue = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='total_value')
+    totalPrincipal = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='total_principal')
+    totalPnl = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='total_pnl')
+    fundValue = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='fund_value')
+    cashValue = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='cash_value')
+    complete = models.BooleanField(default=True)
+    # 明细：[{key,type,name,code,group,groupName,value,principal,pnl,realizedPnl,status}]
+    items = models.JSONField(default=list)
+    createTime = models.DateTimeField(auto_now_add=True, db_column='create_time')
+    updateTime = models.DateTimeField(auto_now=True, db_column='update_time')
+
+    class Meta:
+        db_table = 'sys_holding_snapshot'
+        db_table_comment = '用户持仓每日快照'
+        unique_together = ('user', 'snapshotDate')
+        ordering = ['snapshotDate']
+
+
 class CashHolding(models.Model):
     """用户现金/存款资产；kind=money_fund 表示余额宝等货币基金，deposit 表示银行存款"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, db_column='holding_id')

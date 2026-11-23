@@ -1,7 +1,7 @@
 import json
 import logging
 import time as time_module
-from datetime import datetime, time
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import requests
@@ -66,6 +66,10 @@ TREND_SECID_MAP = {
     'hf_XAG': '122.XAG',
     'hf_OIL': '112.B00Y',
     'hf_CL': '102.CL00Y',
+    'us2y': '171.US2Y',
+    'us5y': '171.US5Y',
+    'us10y': '171.US10Y',
+    'us30y': '171.US30Y',
 }
 TREND_PERIODS = ('minute', 'hour', 'day', 'week', 'month')
 TREND_CACHE_TTL = {'minute': 30, 'hour': 120, 'day': 300, 'week': 300, 'month': 600}
@@ -83,12 +87,37 @@ US_ITEMS = [
     ('usDJI', '道琼斯'),
     ('usIXIC', '纳斯达克综合'),
 ]
+# 美债收益率走东方财富 171 市场（腾讯 / 新浪无对应品种）
+UST_ITEMS = [
+    ('us2y', '美国2年期', '171.US2Y'),
+    ('us5y', '美国5年期', '171.US5Y'),
+    ('us10y', '美国10年期', '171.US10Y'),
+    ('us30y', '美国30年期', '171.US30Y'),
+]
 COMMODITY_ITEMS = [
     ('hf_XAU', '伦敦金'),
     ('hf_XAG', '伦敦银'),
     ('hf_OIL', '布伦特原油'),
-    ('hf_CL', 'NYMEX原油'),
+    ('hf_CL', 'WTI原油'),
 ]
+# 东方财富的 CL00Y 连续合约会提前切换到下月，与用户参考的近月 WTI 价格有约 1 美元的价差；
+# 这里按 NYMEX 到期规则推算近月合约（如 2026-12 -> 102.CL26Z）。key 保持 hf_CL 不变，避免自选失效。
+WTI_CONTRACT_KEY = 'hf_CL'
+WTI_EASTMONEY_MARKET = 102
+WTI_MONTH_CODES = {
+    1: 'F',
+    2: 'G',
+    3: 'H',
+    4: 'J',
+    5: 'K',
+    6: 'M',
+    7: 'N',
+    8: 'Q',
+    9: 'U',
+    10: 'V',
+    11: 'X',
+    12: 'Z',
+}
 # 上海黄金交易所 Au9999；key 保持稳定，避免自选失效
 SGE_GOLD_KEY = 'sge_gold'
 SGE_GOLD_NAME = 'Au9999'
@@ -158,6 +187,10 @@ ITEM_SYMBOLS = {
     'usdcny_ccpr': 'USD/CNY',
     'usd_index': 'DXY',
     'sge_gold': 'AU9999',
+    'us2y': 'US 2Y',
+    'us5y': 'US 5Y',
+    'us10y': 'US 10Y',
+    'us30y': 'US 30Y',
     'btc_btcbtcusd': 'BTC/USD',
     'btc_btcethusd': 'ETH/USD',
     'btc_btcbnbusd': 'BNB/USD',
@@ -174,12 +207,25 @@ ITEM_UNITS = {
     'hf_CL': '美元/桶',
     'sge_gold': '元/克',
     'xau_cny': '元/克',
+    'us2y': '%',
+    'us5y': '%',
+    'us10y': '%',
+    'us30y': '%',
 }
 
-# 需要从东方财富取价的条目：港股、亚太、美元指数、上金所黄金
+# 东财批量接口对有价证券的 f152 固定返回 2，美债收益率需要按原始精度展示
+ITEM_PRECISION = {
+    'us2y': 3,
+    'us5y': 3,
+    'us10y': 3,
+    'us30y': 3,
+}
+
+# 需要从东方财富取价的条目：港股、亚太、美债收益率、美元指数、上金所黄金
 EASTMONEY_QUOTE_ITEMS = (
     HK_ITEMS
     + ASIA_ITEMS
+    + UST_ITEMS
     + [
         (USD_INDEX_ITEM[0], USD_INDEX_ITEM[1], USD_INDEX_ITEM[2]),
         (SGE_GOLD_KEY, SGE_GOLD_NAME, SGE_GOLD_SECID),
@@ -578,6 +624,48 @@ def _apply_holiday(status, quote_date, local_date):
     return status
 
 
+def _wti_expiry_date(year, month):
+    """NYMEX WTI 合约最后交易日：交割月前一月 25 日（遇非工作日取前一工作日）往前第 3 个工作日。"""
+    prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
+    current = date(prev_year, prev_month, 25)
+    while current.weekday() >= 5:
+        current -= timedelta(days=1)
+    remaining = 3
+    while remaining:
+        current -= timedelta(days=1)
+        if current.weekday() < 5:
+            remaining -= 1
+    return current
+
+
+def _wti_front_month_secid(now=None):
+    """返回近月 WTI 合约的东方财富 secid；到期日 14:30（美东）前仍使用该合约。"""
+    now = (now or datetime.now(US_TZ)).astimezone(US_TZ)
+    year, month = now.year, now.month
+    for _ in range(3):
+        expiry = datetime.combine(_wti_expiry_date(year, month), time(14, 30), tzinfo=US_TZ)
+        if expiry > now:
+            break
+        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+    return f'{WTI_EASTMONEY_MARKET}.CL{year % 100:02d}{WTI_MONTH_CODES[month]}'
+
+
+def _fetch_wti_front_quote():
+    """近月 WTI 合约报价；失败时返回 None，由调用方回退腾讯连续合约。"""
+    secid = _wti_front_month_secid()
+    try:
+        quote = _fetch_eastmoney_batch_quotes([secid]).get(secid)
+        if quote:
+            return quote
+    except Exception as exc:
+        logger.warning('WTI 近月合约批量行情获取失败 %s: %s', secid, exc)
+    try:
+        return _fetch_eastmoney_quote(secid)
+    except Exception as exc:
+        logger.warning('WTI 近月合约行情获取失败 %s: %s', secid, exc)
+        return None
+
+
 def _build_item(code, name, quotes):
     quote = quotes.get(code) or {}
     return {
@@ -588,7 +676,7 @@ def _build_item(code, name, quotes):
         'price': quote.get('price'),
         'change': quote.get('change'),
         'changePercent': quote.get('changePercent'),
-        'precision': quote.get('precision', 2),
+        'precision': ITEM_PRECISION.get(code, quote.get('precision', 2)),
         'quoteTime': quote.get('quoteTime', ''),
     }
 
@@ -839,6 +927,8 @@ def _build_overview():
         pass
 
     eastmoney_quotes = _fetch_eastmoney_quotes()
+    # 连续合约 CL00Y 会提前滚到下月，这里单独取近月合约，和主流「WTI原油」报价保持一致
+    wti_quote = _fetch_wti_front_quote()
 
     if failed_fetches == 3:
         raise RuntimeError('行情数据获取失败')
@@ -891,7 +981,12 @@ def _build_overview():
 
     commodity_items = []
     for code, name in COMMODITY_ITEMS:
-        commodity_items.append(_build_item(code, name, tencent_quotes))
+        if code == WTI_CONTRACT_KEY and wti_quote:
+            commodity_items.append(
+                _build_item(code, name, {code: wti_quote})
+            )
+        else:
+            commodity_items.append(_build_item(code, name, tencent_quotes))
         if code == 'hf_XAG':
             commodity_items.append(
                 _build_item(
@@ -922,6 +1017,10 @@ def _build_overview():
         _build_group(
             'us_futures', '美股指数期货', futures_status,
             [_build_item(code, name, futures_quotes) for code, name in US_FUTURES_ITEMS],
+        ),
+        _build_group(
+            'us_treasury', '美债收益率', futures_status,
+            [_build_item(code, name, eastmoney_quotes) for code, name, _ in UST_ITEMS],
         ),
         _build_group(
             'commodity', '贵金属 / 原油', commodity_status,
@@ -1054,7 +1153,8 @@ def get_market_trend_data(key, period='minute', force=False):
         cached = cache.get(cache_key)
         if cached:
             return cached
-    secid = TREND_SECID_MAP[key]
+    # WTI 走势同样跟随近月合约，避免和行情卡片的价格对不上
+    secid = _wti_front_month_secid() if key == WTI_CONTRACT_KEY else TREND_SECID_MAP[key]
     try:
         if period == 'minute':
             trend = _fetch_trend_minute(secid)
@@ -1067,6 +1167,8 @@ def get_market_trend_data(key, period='minute', force=False):
             return {**stale, 'stale': True}
         raise
     result = {'key': key, 'period': period, **trend}
+    if key in ITEM_PRECISION:
+        result['precision'] = ITEM_PRECISION[key]
     cache.set(cache_key, result, TREND_CACHE_TTL[period])
     cache.set(stale_cache_key, result, TREND_STALE_CACHE_TTL)
     return result

@@ -7,7 +7,7 @@ from modules.system.service.cash import (
 )
 from utils.response import res_handle
 from utils.tools import post_handle
-from .fund import _get_super_user_id
+from .fund import _get_super_user_id, _record_snapshot_safely
 
 
 @require_POST
@@ -41,6 +41,7 @@ def save_cash_holding_view(request):
         return res_handle(501, str(exc), False)
     except Exception:
         return res_handle(500, '资产保存失败，请稍后重试', False)
+    _record_snapshot_safely(user_id)
     return res_handle(0, '保存成功', True)
 
 
@@ -59,4 +60,5 @@ def delete_cash_holding_view(request):
         return res_handle(501, str(exc), False)
     except Exception:
         return res_handle(500, '资产删除失败，请稍后重试', False)
+    _record_snapshot_safely(user_id)
     return res_handle(0, '删除成功', True)
