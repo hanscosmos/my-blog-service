@@ -5,6 +5,7 @@ from .views.updateLog import *
 from .views.market import *
 from .views.fund import *
 from .views.cash import *
+from .views.physical import *
 from .views.holding import *
 from .views.overview import *
 
@@ -33,6 +34,9 @@ urlpatterns = [
     path('market/cash/portfolio', get_cash_portfolio, name='get_cash_portfolio'),
     path('market/cash/holding/save', save_cash_holding_view, name='save_cash_holding'),
     path('market/cash/holding/delete', delete_cash_holding_view, name='delete_cash_holding'),
+    path('market/physical/portfolio', get_physical_portfolio, name='get_physical_portfolio'),
+    path('market/physical/save', save_physical_asset_view, name='save_physical_asset'),
+    path('market/physical/delete', delete_physical_asset_view, name='delete_physical_asset'),
     path('market/holding/history', get_holding_history_view, name='get_holding_history'),
     path('market/holding/remind', get_holding_remind_view, name='get_holding_remind'),
     path('market/holding/snapshot/record', record_holding_snapshot_view, name='record_holding_snapshot'),

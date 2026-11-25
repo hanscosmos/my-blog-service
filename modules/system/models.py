@@ -90,6 +90,33 @@ class HoldingSnapshot(models.Model):
         ordering = ['snapshotDate']
 
 
+class PhysicalAsset(models.Model):
+    """用户实物资产；与基金/现金资产完全独立，不参与金融资产汇总与快照"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, db_column='asset_id')
+    user = models.UUIDField(db_column='user_id')
+    category = models.CharField(max_length=32, db_column='category')
+    name = models.CharField(max_length=128, db_column='name')
+    currentValue = models.DecimalField(max_digits=18, decimal_places=2, db_column='current_value')
+    costValue = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='cost_value')
+    cover = models.URLField(max_length=800, null=True, blank=True, default=None)
+    # 实拍图 URL 数组
+    images = models.JSONField(default=list, blank=True)
+    purchaseDate = models.DateField(null=True, blank=True, db_column='purchase_date')
+    valuationDate = models.DateField(null=True, blank=True, db_column='valuation_date')
+    remark = models.CharField(max_length=255, null=True, blank=True)
+    sort = models.IntegerField(default=0)
+    createTime = models.DateTimeField(auto_now_add=True, db_column='create_time')
+    updateTime = models.DateTimeField(auto_now=True, db_column='update_time')
+
+    class Meta:
+        db_table = 'sys_physical_asset'
+        db_table_comment = '用户实物资产'
+        indexes = [
+            models.Index(fields=['user'], name='idx_physical_asset_user'),
+        ]
+        ordering = ['sort', 'createTime']
+
+
 class CashHolding(models.Model):
     """用户现金/存款资产；kind=money_fund 表示余额宝等货币基金，deposit 表示银行存款"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, db_column='holding_id')

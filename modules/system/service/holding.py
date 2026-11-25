@@ -73,8 +73,30 @@ def _cash_items(cash_data):
     return items
 
 
-def record_holding_snapshot(user_id):
-    """记录当天持仓快照；同一天重复调用会覆盖为最新值。"""
+def _item_scope_match(item, keys):
+    """明细项是否属于待更新的范围：命中明细 key 或所属大类 key"""
+    return item.get('key') in keys or item.get('group') in keys
+
+
+def _sum_field(items, field):
+    total = Decimal('0')
+    for item in items:
+        value = _to_decimal(item.get(field))
+        if value is not None:
+            total += value
+    return total
+
+
+def _merge_total(base, added_items, removed_items, field):
+    return base + _sum_field(added_items, field) - _sum_field(removed_items, field)
+
+
+def record_holding_snapshot(user_id, keys=None):
+    """记录当天持仓快照；同一天重复调用会覆盖为最新值。
+
+    keys 为空时记录全部持仓（已清仓基金不计入）；传入 key 列表时只更新
+    对应的大类 / 小类，其余品种沿用当天已有快照的数据。
+    """
     fund_data = get_fund_portfolio_data(user_id)
     cash_data = get_cash_portfolio_data(user_id)
     fund_summary = fund_data.get('summary') or {}
@@ -86,20 +108,95 @@ def record_holding_snapshot(user_id):
     cash_principal = _to_decimal(cash_summary.get('totalPrincipal')) or Decimal('0')
     fund_pnl = _to_decimal(fund_summary.get('totalPnlIncludingRealized')) or Decimal('0')
     cash_pnl = _to_decimal(cash_summary.get('totalPnl')) or Decimal('0')
+    complete = not (
+        fund_summary.get('incomplete') or cash_summary.get('incomplete')
+    )
+
+    current_items = _fund_items(fund_data) + _cash_items(cash_data)
+    scope_keys = {str(key) for key in (keys or []) if key}
+    snapshot = HoldingSnapshot.objects.filter(
+        user=user_id, snapshotDate=_today()
+    ).first()
+
+    if scope_keys:
+        # 没有当天快照时以当前全量数据为底，避免局部更新导致汇总缺失
+        base_items = list(snapshot.items or []) if snapshot else current_items
+        added_items = [
+            item for item in current_items
+            if _item_scope_match(item, scope_keys)
+        ]
+        removed_items = [
+            item for item in base_items
+            if _item_scope_match(item, scope_keys)
+        ]
+        items = [
+            item for item in base_items
+            if not _item_scope_match(item, scope_keys)
+        ] + added_items
+
+        base_total_value = (
+            Decimal(str(snapshot.totalValue)) if snapshot
+            else fund_value + cash_value
+        )
+        base_total_principal = (
+            Decimal(str(snapshot.totalPrincipal)) if snapshot
+            else fund_principal + cash_principal
+        )
+        base_total_pnl = (
+            Decimal(str(snapshot.totalPnl)) if snapshot else fund_pnl + cash_pnl
+        )
+        base_fund_value = (
+            Decimal(str(snapshot.fundValue)) if snapshot else fund_value
+        )
+        base_cash_value = (
+            Decimal(str(snapshot.cashValue)) if snapshot else cash_value
+        )
+
+        added_fund = [item for item in added_items if item.get('type') == 'fund']
+        removed_fund = [
+            item for item in removed_items if item.get('type') == 'fund'
+        ]
+        added_cash = [item for item in added_items if item.get('type') != 'fund']
+        removed_cash = [
+            item for item in removed_items if item.get('type') != 'fund'
+        ]
+
+        total_value = _merge_total(
+            base_total_value, added_items, removed_items, 'value'
+        )
+        total_principal = _merge_total(
+            base_total_principal, added_items, removed_items, 'principal'
+        )
+        total_pnl = _merge_total(
+            base_total_pnl, added_items, removed_items, 'pnl'
+        )
+        total_fund_value = _merge_total(
+            base_fund_value, added_fund, removed_fund, 'value'
+        )
+        total_cash_value = _merge_total(
+            base_cash_value, added_cash, removed_cash, 'value'
+        )
+        # 保留快照原有的完整性标记，局部更新不覆盖其他品种的缺失状态
+        complete = bool(snapshot.complete) if snapshot else complete
+    else:
+        items = current_items
+        total_value = fund_value + cash_value
+        total_principal = fund_principal + cash_principal
+        total_pnl = fund_pnl + cash_pnl
+        total_fund_value = fund_value
+        total_cash_value = cash_value
 
     snapshot, _ = HoldingSnapshot.objects.update_or_create(
         user=user_id,
         snapshotDate=_today(),
         defaults={
-            'totalValue': _json_number(fund_value + cash_value, 2),
-            'totalPrincipal': _json_number(fund_principal + cash_principal, 2),
-            'totalPnl': _json_number(fund_pnl + cash_pnl, 2),
-            'fundValue': _json_number(fund_value, 2),
-            'cashValue': _json_number(cash_value, 2),
-            'complete': not (
-                fund_summary.get('incomplete') or cash_summary.get('incomplete')
-            ),
-            'items': _fund_items(fund_data) + _cash_items(cash_data),
+            'totalValue': _json_number(total_value, 2),
+            'totalPrincipal': _json_number(total_principal, 2),
+            'totalPnl': _json_number(total_pnl, 2),
+            'fundValue': _json_number(total_fund_value, 2),
+            'cashValue': _json_number(total_cash_value, 2),
+            'complete': complete,
+            'items': items,
         },
     )
     return snapshot

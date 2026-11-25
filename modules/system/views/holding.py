@@ -6,6 +6,7 @@ from modules.system.service.holding import (
     record_holding_snapshot,
 )
 from utils.response import res_handle
+from utils.tools import post_handle
 from .fund import _get_super_user_id
 
 
@@ -39,7 +40,14 @@ def record_holding_snapshot_view(request):
     if error:
         return error
     try:
-        record_holding_snapshot(user_id)
+        params = post_handle(request)
+    except Exception:
+        params = {}
+    keys = params.get('keys')
+    if keys is not None and not isinstance(keys, list):
+        return res_handle(501, '参数格式错误', False)
+    try:
+        record_holding_snapshot(user_id, keys)
     except Exception:
         return res_handle(500, '持仓快照记录失败，请稍后重试', False)
     return res_handle(0, '记录成功', True)
